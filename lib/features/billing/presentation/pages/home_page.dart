@@ -453,7 +453,6 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.all(16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        spacing: 1,
         children: [
           Expanded(
             child: Column(

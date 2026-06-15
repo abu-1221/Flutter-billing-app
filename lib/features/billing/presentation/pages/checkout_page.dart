@@ -21,7 +21,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     return PopScope(
         canPop: false,
-        onPopInvokedWithResult: (bool didPop, dynamic result) {
+        onPopInvoked: (bool didPop) {
           if (didPop) return;
           context.read<BillingBloc>().add(ClearCartEvent());
           context.go('/');

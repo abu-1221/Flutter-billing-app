@@ -7,6 +7,8 @@ import '../../features/shop/presentation/pages/shop_details_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
 import '../../features/billing/presentation/pages/scanner_page.dart';
 import '../../features/billing/presentation/pages/checkout_page.dart';
+import '../../features/billing/presentation/pages/history_page.dart';
+import '../../features/billing/presentation/pages/history_detail_page.dart';
 import '../../features/product/domain/entities/product.dart';
 
 final router = GoRouter(
@@ -29,6 +31,22 @@ final router = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (context, state) => const SettingsPage(),
+    ),
+    GoRoute(
+      path: '/history',
+      builder: (context, state) => const HistoryPage(),
+      routes: [
+        GoRoute(
+          path: 'detail',
+          builder: (context, state) {
+            final transaction = state.extra as Map<dynamic, dynamic>?;
+            if (transaction == null) {
+              return const HistoryPage();
+            }
+            return HistoryDetailPage(transaction: transaction);
+          },
+        ),
+      ],
     ),
     GoRoute(
       path: '/products',

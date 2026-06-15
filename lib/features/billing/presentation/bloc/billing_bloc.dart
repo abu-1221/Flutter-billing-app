@@ -1,5 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:intl/intl.dart';
 import '../../domain/entities/cart_item.dart';
 import 'package:billing_app/features/product/domain/entities/product.dart';
 import 'package:billing_app/features/product/domain/usecases/product_usecases.dart';
@@ -20,6 +21,7 @@ class BillingBloc extends Bloc<BillingEvent, BillingState> {
     on<UpdateQuantityEvent>(_onUpdateQuantity);
     on<ClearCartEvent>(_onClearCart);
     on<PrintReceiptEvent>(_onPrintReceipt);
+    on<ConfirmPurchaseEvent>(_onConfirmPurchase);
   }
 
   Future<void> _onScanBarcode(
@@ -79,7 +81,112 @@ class BillingBloc extends Bloc<BillingEvent, BillingState> {
   }
 
   void _onClearCart(ClearCartEvent event, Emitter<BillingState> emit) {
-    emit(const BillingState());
+    emit(state.copyWith(cartItems: const [], clearPurchaseState: true));
+  }
+
+  Future<void> _onConfirmPurchase(
+      ConfirmPurchaseEvent event, Emitter<BillingState> emit) async {
+    if (state.cartItems.isEmpty) return;
+
+    emit(state.copyWith(isPrinting: true, clearError: true));
+
+    final int nextInvoiceIndex =
+        HiveDatabase.settingsBox.get('next_invoice_index', defaultValue: 1);
+    final int nextReceiptIndex =
+        HiveDatabase.settingsBox.get('next_receipt_index', defaultValue: 1);
+
+    final String year = DateTime.now().year.toString();
+    final String invoiceNumber =
+        'INV-$year-${nextInvoiceIndex.toString().padLeft(6, '0')}';
+    final String receiptNumber =
+        'RCPT-$year-${nextReceiptIndex.toString().padLeft(6, '0')}';
+
+    final now = DateTime.now();
+    final String formattedDate = DateFormat('yyyy-MM-dd').format(now);
+    final String formattedTime = DateFormat('hh:mm a').format(now);
+
+    final subtotal = state.subtotalAmount;
+    final tax = state.taxAmount;
+    final grandTotal = state.totalAmount;
+
+    final List<Map<String, dynamic>> itemsList = state.cartItems
+        .map((item) => {
+              'name': item.product.name,
+              'qty': item.quantity,
+              'price': item.product.price,
+              'total': item.total,
+            })
+        .toList();
+
+    final transaction = {
+      'invoiceNumber': invoiceNumber,
+      'receiptNumber': receiptNumber,
+      'date': formattedDate,
+      'time': formattedTime,
+      'userId': event.userId,
+      'userName': event.userName,
+      'items': itemsList,
+      'subtotal': subtotal,
+      'tax': tax,
+      'grandTotal': grandTotal,
+    };
+
+    await HiveDatabase.transactionsBox.add(transaction);
+    await HiveDatabase.settingsBox.put('next_invoice_index', nextInvoiceIndex + 1);
+    await HiveDatabase.settingsBox.put('next_receipt_index', nextReceiptIndex + 1);
+
+    final printerHelper = PrinterHelper();
+    if (printerHelper.isConnected) {
+      try {
+        await printerHelper.printReceipt(
+          shopName: event.shopName,
+          address1: event.address1,
+          address2: event.address2,
+          phone: event.phone,
+          items: itemsList,
+          total: grandTotal,
+          footer: event.footer,
+          invoiceNumber: invoiceNumber,
+          receiptNumber: receiptNumber,
+          subtotal: subtotal,
+          tax: tax,
+        );
+      } catch (e) {
+        // print failed
+      }
+    } else {
+      final savedMac = HiveDatabase.settingsBox.get('printer_mac');
+      if (savedMac != null) {
+        final connected = await printerHelper.connect(savedMac);
+        if (connected) {
+          try {
+            await printerHelper.printReceipt(
+              shopName: event.shopName,
+              address1: event.address1,
+              address2: event.address2,
+              phone: event.phone,
+              items: itemsList,
+              total: grandTotal,
+              footer: event.footer,
+              invoiceNumber: invoiceNumber,
+              receiptNumber: receiptNumber,
+              subtotal: subtotal,
+              tax: tax,
+            );
+          } catch (e) {
+            // print failed
+          }
+        }
+      }
+    }
+
+    emit(state.copyWith(
+      cartItems: const [],
+      isPrinting: false,
+      isPurchaseSuccess: true,
+      generatedInvoiceNumber: invoiceNumber,
+      generatedReceiptNumber: receiptNumber,
+    ));
   }
 
   Future<void> _onPrintReceipt(

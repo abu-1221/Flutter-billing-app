@@ -23,10 +23,8 @@ class _HomePageState extends State<HomePage> {
   );
 
   bool _isCameraOn = true;
-  bool _isFlashOn = false;
-
-  // Cooldown mapping to prevent rapid firing of the same barcode
-  final Map<String, DateTime> _lastScanTimes = {};
+  bool _isScannerLocked = false;
+  String _lastScannedBarcode = '';
 
   @override
   void dispose() {
@@ -35,22 +33,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onDetect(BarcodeCapture capture) async {
-    final List<Barcode> barcodes = capture.barcodes;
-    final now = DateTime.now();
+    if (_isScannerLocked) return;
 
+    final List<Barcode> barcodes = capture.barcodes;
     for (final barcode in barcodes) {
       if (barcode.rawValue != null) {
         final rawValue = barcode.rawValue!;
 
-        // Cooldown logic: 2 seconds per identical barcode
-        if (_lastScanTimes.containsKey(rawValue)) {
-          final lastScan = _lastScanTimes[rawValue]!;
-          if (now.difference(lastScan).inSeconds < 2) {
-            continue;
-          }
-        }
-
-        _lastScanTimes[rawValue] = now;
+        setState(() {
+          _isScannerLocked = true;
+          _lastScannedBarcode = rawValue;
+        });
 
         // Vibrate
         final hasVibrator = await Vibration.hasVibrator();
@@ -61,9 +54,61 @@ class _HomePageState extends State<HomePage> {
         if (mounted) {
           context.read<BillingBloc>().add(ScanBarcodeEvent(rawValue));
         }
-        break; // Process one barcode at a time per frame
+        break; // Process one barcode at a time
       }
     }
+  }
+
+  void _showRemoveConfirmation(BuildContext context, CartItem item) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Remove Item?'),
+          content: Text('Are you sure you want to remove "${item.product.name}" from the cart?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () {
+                context.read<BillingBloc>().add(RemoveProductFromCartEvent(item.product.id));
+                Navigator.pop(context);
+              },
+              child: const Text('Remove'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showClearAllConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Clear All?'),
+          content: const Text('Are you sure you want to remove all scanned products?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () {
+                context.read<BillingBloc>().add(ClearCartEvent());
+                Navigator.pop(context);
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -85,7 +130,7 @@ class _HomePageState extends State<HomePage> {
         },
         child: Stack(
           children: [
-            // SCANNER VIEW (TOP 50%)
+            // SCANNER VIEW (TOP 40%)
             Positioned(
               top: 0,
               left: 0,
@@ -94,7 +139,7 @@ class _HomePageState extends State<HomePage> {
               child: _buildScannerSection(),
             ),
 
-            // BOTTOM PANEL (BOTTOM 50% + OVERLAP)
+            // BOTTOM PANEL (BOTTOM 60% + OVERLAP)
             Positioned(
               top: (MediaQuery.of(context).size.height * 0.4) - 24, // overlap
               left: 0,
@@ -150,18 +195,21 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 16),
                 if (_isCameraOn)
-                  _buildOverlayButton(
-                    icon:
-                        _isFlashOn ? Icons.flashlight_off : Icons.flashlight_on,
-                    onPressed: () {
-                      setState(() => _isFlashOn = !_isFlashOn);
-                      _scannerController.toggleTorch();
+                  ValueListenableBuilder<MobileScannerState>(
+                    valueListenable: _scannerController,
+                    builder: (context, scannerState, child) {
+                      final isTorchOn = scannerState.torchState == TorchState.on;
+                      return _buildOverlayButton(
+                        icon: isTorchOn ? Icons.flashlight_off : Icons.flashlight_on,
+                        onPressed: () {
+                          _scannerController.toggleTorch();
+                        },
+                      );
                     },
                   ),
                 if (_isCameraOn) const SizedBox(height: 16),
                 _buildOverlayButton(
                   icon: _isCameraOn ? Icons.videocam : Icons.videocam_off,
-                  // color:  Colors.white24 ,
                   onPressed: () {
                     setState(() {
                       _isCameraOn = !_isCameraOn;
@@ -178,7 +226,7 @@ class _HomePageState extends State<HomePage> {
           ),
 
           // Central Overlay Bounding Box
-          if (_isCameraOn)
+          if (_isCameraOn && !_isScannerLocked)
             Center(
               child: Container(
                 width: 250,
@@ -194,6 +242,46 @@ class _HomePageState extends State<HomePage> {
                     _buildCorner(Alignment.topRight),
                     _buildCorner(Alignment.bottomLeft),
                     _buildCorner(Alignment.bottomRight),
+                  ],
+                ),
+              ),
+            ),
+
+          // Locked Scanner Overlay
+          if (_isCameraOn && _isScannerLocked)
+            Container(
+              color: Colors.black.withOpacity(0.7),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.qr_code_scanner, color: Colors.greenAccent, size: 48),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Barcode Scanned!',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Code: $_lastScannedBarcode',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                      ),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Scan Next Item', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        setState(() {
+                          _isScannerLocked = false;
+                        });
+                      },
+                    )
                   ],
                 ),
               ),
@@ -342,9 +430,29 @@ class _HomePageState extends State<HomePage> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Scanned Items',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.w600)),
+                        Row(
+                          children: [
+                            const Text('Scanned Items',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.w600)),
+                            if (state.cartItems.isNotEmpty) ...[
+                              const SizedBox(width: 12),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  foregroundColor: Colors.red,
+                                ),
+                                onPressed: () => _showClearAllConfirmation(context),
+                                child: const Text('Clear All',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)),
+                              ),
+                            ]
+                          ],
+                        ),
                         Text('$totalItems items total',
                             style: const TextStyle(
                                 fontSize: 12, color: Colors.grey)),
@@ -450,7 +558,7 @@ class _HomePageState extends State<HomePage> {
           BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))
         ],
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -476,43 +584,52 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _circularIconButton(
-                    icon: Icons.remove,
-                    onPressed: () {
-                      if (item.quantity > 1) {
-                        context.read<BillingBloc>().add(UpdateQuantityEvent(
-                            item.product.id, item.quantity - 1));
-                      } else {
-                        context
-                            .read<BillingBloc>()
-                            .add(RemoveProductFromCartEvent(item.product.id));
-                      }
-                    }),
-                SizedBox(
-                  width: 32,
-                  child: Text(
-                    '${item.quantity}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+          const SizedBox(width: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                _circularIconButton(
-                    icon: Icons.add,
-                    onPressed: () {
-                      context.read<BillingBloc>().add(UpdateQuantityEvent(
-                          item.product.id, item.quantity + 1));
-                    }),
-              ],
-            ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _circularIconButton(
+                        icon: Icons.remove,
+                        onPressed: () {
+                          if (item.quantity > 1) {
+                            context.read<BillingBloc>().add(UpdateQuantityEvent(
+                                item.product.id, item.quantity - 1));
+                          } else {
+                            _showRemoveConfirmation(context, item);
+                          }
+                        }),
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        '${item.quantity}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    _circularIconButton(
+                        icon: Icons.add,
+                        onPressed: () {
+                          context.read<BillingBloc>().add(UpdateQuantityEvent(
+                              item.product.id, item.quantity + 1));
+                        }),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 22),
+                onPressed: () => _showRemoveConfirmation(context, item),
+              ),
+            ],
           ),
         ],
       ),

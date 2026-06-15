@@ -55,3 +55,26 @@ class PrintReceiptEvent extends BillingEvent {
   @override
   List<Object> get props => [shopName, address1, address2, phone, footer];
 }
+
+class ConfirmPurchaseEvent extends BillingEvent {
+  final String shopName;
+  final String address1;
+  final String address2;
+  final String phone;
+  final String footer;
+  final String userId;
+  final String userName;
+
+  const ConfirmPurchaseEvent({
+    required this.shopName,
+    required this.address1,
+    required this.address2,
+    required this.phone,
+    required this.footer,
+    this.userId = 'USR-2026-001',
+    this.userName = 'Admin User',
+  });
+
+  @override
+  List<Object> get props => [shopName, address1, address2, phone, footer, userId, userName];
+}

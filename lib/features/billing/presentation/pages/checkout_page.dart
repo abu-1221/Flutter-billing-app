@@ -20,12 +20,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     const borderColor = Color(0xFFE5E5EA);
 
     return PopScope(
-        canPop: false,
-        onPopInvoked: (bool didPop) {
-          if (didPop) return;
-          context.read<BillingBloc>().add(ClearCartEvent());
-          context.go('/');
-        },
+        canPop: true,
         child: Scaffold(
           appBar: AppBar(
             title: const Text('Checkout',
@@ -37,19 +32,112 @@ class _CheckoutPageState extends State<CheckoutPage> {
               icon: Icon(Icons.chevron_left,
                   size: 28, color: Theme.of(context).primaryColor),
               onPressed: () {
-                context.read<BillingBloc>().add(ClearCartEvent());
-                context.go('/');
+                context.pop();
               },
             ),
           ),
           body: BlocConsumer<BillingBloc, BillingState>(
             listener: (context, state) {
-              if (state.printSuccess) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Printed successfully'),
-                    backgroundColor: Colors.green));
-                // context.read<BillingBloc>().add(ClearCartEvent());
-                // context.go('/');
+              if (state.isPurchaseSuccess) {
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) {
+                    return Dialog(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 72,
+                              height: 72,
+                              decoration: const BoxDecoration(
+                                color: Colors.greenAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check,
+                                color: Colors.white,
+                                size: 40,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text(
+                              'Purchase Confirmed!',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Transaction saved successfully.',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFE5E5EA)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Invoice:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                      Text(state.generatedInvoiceNumber ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Receipt:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                      Text(state.generatedReceiptNumber ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Theme.of(context).primaryColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(context); // Close dialog
+                                  context.read<BillingBloc>().add(ClearCartEvent());
+                                  context.go('/');
+                                },
+                                child: const Text(
+                                  'Done',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
               }
             },
             builder: (context, billingState) {
@@ -184,8 +272,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                           ),
                                           const SizedBox(height: 12),
                                           SizedBox(
-                                            width: 180,
-                                            height: 180,
+                                            width: 150,
+                                            height: 150,
                                             child: PrettyQrView.data(
                                               data:
                                                   'upi://pay?pa=$upiId&pn=$shopName&am=${billingState.totalAmount.toStringAsFixed(2)}&cu=INR',
@@ -195,6 +283,52 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                       )
                                     : const SizedBox.shrink(),
                                 const SizedBox(height: 15),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'SUBTOTAL',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[500],
+                                      ),
+                                    ),
+                                    Text(
+                                      '₹${billingState.subtotalAmount.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'TAX (18% GST)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[500],
+                                      ),
+                                    ),
+                                    Text(
+                                      '₹${billingState.taxAmount.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(height: 16),
                                 Row(
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
@@ -226,7 +360,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             onPressed: () {
                               if (shopState is ShopLoaded) {
                                 context.read<BillingBloc>().add(
-                                    PrintReceiptEvent(
+                                    ConfirmPurchaseEvent(
                                         shopName: shopState.shop.name,
                                         address1: shopState.shop.addressLine1,
                                         address2: shopState.shop.addressLine2,
@@ -240,8 +374,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                         backgroundColor: Colors.red));
                               }
                             },
-                            label: 'Print Receipt',
-                            icon: Icons.print,
+                            label: 'Confirm & Print Receipt',
+                            icon: Icons.check_circle,
                             isLoading: billingState.isPrinting,
                           ),
                         ],

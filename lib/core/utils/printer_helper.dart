@@ -111,6 +111,10 @@ class PrinterHelper {
     required List<Map<String, dynamic>> items, // Name, Qty, Price, Total
     required double total,
     required String footer,
+    String? invoiceNumber,
+    String? receiptNumber,
+    double? subtotal,
+    double? tax,
   }) async {
     if (!_isConnected) return;
 
@@ -147,6 +151,15 @@ class PrinterHelper {
     bytes += _textToBytes(formattedDate);
     bytes += EscPos.lineFeed;
 
+    if (invoiceNumber != null) {
+      bytes += _textToBytes('Invoice: $invoiceNumber');
+      bytes += EscPos.lineFeed;
+    }
+    if (receiptNumber != null) {
+      bytes += _textToBytes('Receipt: $receiptNumber');
+      bytes += EscPos.lineFeed;
+    }
+
     bytes += _textToBytes('--------------------------------');
     bytes += EscPos.lineFeed;
 
@@ -177,8 +190,16 @@ class PrinterHelper {
 
     // Total (Align Right)
     bytes += EscPos.alignRight;
+    if (subtotal != null) {
+      bytes += _textToBytes('Subtotal: ₹${subtotal.toStringAsFixed(2)}');
+      bytes += EscPos.lineFeed;
+    }
+    if (tax != null) {
+      bytes += _textToBytes('Tax (18% GST): ₹${tax.toStringAsFixed(2)}');
+      bytes += EscPos.lineFeed;
+    }
     bytes += EscPos.boldOn;
-    bytes += _textToBytes('TOTAL: $total');
+    bytes += _textToBytes('TOTAL: ₹${total.toStringAsFixed(2)}');
     bytes += EscPos.lineFeed;
     bytes += EscPos.boldOff;
     bytes += EscPos.lineFeed;

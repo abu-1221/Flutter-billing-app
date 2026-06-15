@@ -13,3 +13,7 @@
 # Hive database optimization rules
 -keep class hive.** { *; }
 -dontwarn hive.**
+
+# Ignore missing classes from play core / deferred components
+-dontwarn com.google.android.play.core.**
+-dontwarn io.flutter.embedding.engine.deferredcomponents.**

@@ -103,7 +103,7 @@ class _AddProductPageState extends State<AddProductPage> {
                       const SizedBox(width: 12),
                       Container(
                         decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                          color: AppTheme.primaryColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: IconButton(

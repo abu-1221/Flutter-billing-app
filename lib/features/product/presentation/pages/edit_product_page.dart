@@ -72,10 +72,10 @@ class _EditProductPageState extends State<EditProductPage> {
                     padding: const EdgeInsets.all(16),
                     margin: const EdgeInsets.only(bottom: 24),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.05),
+                      color: AppTheme.primaryColor.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.1)),
+                          color: AppTheme.primaryColor.withOpacity(0.1)),
                     ),
                     child: Row(
                       children: [
@@ -90,7 +90,7 @@ class _EditProductPageState extends State<EditProductPage> {
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     color: AppTheme.primaryColor
-                                        .withValues(alpha: 0.7))),
+                                        .withOpacity(0.7))),
                             const SizedBox(height: 2),
                             Text(widget.product.barcode,
                                 style: const TextStyle(

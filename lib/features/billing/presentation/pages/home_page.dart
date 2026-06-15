@@ -323,7 +323,7 @@ class _HomePageState extends State<HomePage> {
             height: 4,
             margin: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.grey.withValues(alpha: 0.3),
+              color: Colors.grey.withOpacity(0.3),
               borderRadius: BorderRadius.circular(2),
             ),
           ),

@@ -94,7 +94,7 @@ class _ProductListPageState extends State<ProductListPage> {
                       const SizedBox(width: 12),
                       Container(
                         decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.05),
+                          color: AppTheme.primaryColor.withOpacity(0.05),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: IconButton(
@@ -208,7 +208,7 @@ class _ProductListPageState extends State<ProductListPage> {
                               Container(
                                 decoration: BoxDecoration(
                                   color: AppTheme.primaryColor
-                                      .withValues(alpha: 0.1),
+                                      .withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: IconButton(
@@ -225,7 +225,7 @@ class _ProductListPageState extends State<ProductListPage> {
                               const SizedBox(width: 8),
                               Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.1),
+                                  color: Colors.red.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: IconButton(

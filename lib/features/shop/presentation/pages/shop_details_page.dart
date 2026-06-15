@@ -114,7 +114,7 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.2,
-                          color: AppTheme.primaryColor.withValues(alpha: 0.8),
+                          color: AppTheme.primaryColor.withOpacity(0.8),
                         )),
                     const SizedBox(
                       height: 5,

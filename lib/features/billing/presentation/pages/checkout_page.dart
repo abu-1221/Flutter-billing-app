@@ -79,7 +79,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                 border: Border.all(color: borderColor),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.05),
+                                    color: Colors.black.withOpacity(0.05),
                                     blurRadius: 12,
                                     offset: const Offset(0, 4),
                                   )
@@ -146,13 +146,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     // Bottom Bar
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: Colors.white.withOpacity(0.9),
                         borderRadius: const BorderRadius.horizontal(
                             left: Radius.circular(24),
                             right: Radius.circular(24)),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
+                            color: Colors.black.withOpacity(0.05),
                             blurRadius: 10,
                             offset: const Offset(0, -4),
                           ),

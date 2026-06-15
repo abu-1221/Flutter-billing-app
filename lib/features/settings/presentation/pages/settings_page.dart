@@ -72,7 +72,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             boxShadow: [
                               BoxShadow(
                                 color: AppTheme.primaryColor
-                                    .withValues(alpha: 0.2),
+                                    .withOpacity(0.2),
                                 blurRadius: 15,
                                 spreadRadius: 5,
                               )
@@ -273,7 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                color: AppTheme.primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, color: AppTheme.primaryColor, size: 20),

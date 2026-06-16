@@ -5,6 +5,7 @@ import '../bloc/product_bloc.dart';
 import '../../domain/entities/product.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/app_validators.dart';
+import '../../../../core/data/hive_database.dart';
 
 class ProductListPage extends StatefulWidget {
   const ProductListPage({super.key});
@@ -16,6 +17,45 @@ class ProductListPage extends StatefulWidget {
 class _ProductListPageState extends State<ProductListPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _selectedCategory = 'All';
+  String _selectedStockFilter = 'All'; // 'All', 'In Stock', 'Low Stock', 'Out of Stock'
+  bool _sortByRecentlyAdded = false;
+
+  Widget _buildStockBadge(Product product) {
+    final int minStock = HiveDatabase.settingsBox.get('min_stock_${product.id}', defaultValue: 5);
+    final int stock = product.stock;
+
+    Color color;
+    String text;
+
+    if (stock <= 0) {
+      color = Colors.red;
+      text = 'OUT OF STOCK';
+    } else if (stock <= minStock) {
+      color = Colors.orange;
+      text = 'LOW STOCK ($stock)';
+    } else {
+      color = Colors.green;
+      text = 'STOCK: $stock';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -63,6 +103,14 @@ class _ProductListPageState extends State<ProductListPage> {
         title: const Text('Product Management',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_upload_outlined, color: AppTheme.primaryColor),
+            tooltip: 'Import Bulk Products',
+            onPressed: () => context.push('/products/import'),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Column(
         children: [
@@ -81,7 +129,7 @@ class _ProductListPageState extends State<ProductListPage> {
                           controller: _searchController,
                           textCapitalization: TextCapitalization.words,
                           decoration: InputDecoration(
-                            hintText: 'Scan or enter barcode',
+                            hintText: 'Scan or enter barcode/name/category',
                             prefixIcon: Icon(
                               Icons.search,
                               color: Colors.grey[400],
@@ -109,6 +157,86 @@ class _ProductListPageState extends State<ProductListPage> {
                   const SizedBox(height: 6),
                   const Text('Tap the icon to open camera scanner',
                       style: TextStyle(fontSize: 12, color: Color(0xFF4C669A))),
+                  const SizedBox(height: 12),
+                  // Filters Row
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        // Category Dropdown
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[200]!),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.white,
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedCategory,
+                              hint: const Text('Category'),
+                              style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.w500),
+                              items: ['All', ...state.products.map((p) => p.category).toSet()].map((cat) {
+                                return DropdownMenuItem<String>(
+                                  value: cat,
+                                  child: Text(cat),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedCategory = val ?? 'All';
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Stock filter Dropdown
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[200]!),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.white,
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedStockFilter,
+                              style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.w500),
+                              items: ['All', 'In Stock', 'Low Stock', 'Out of Stock'].map((filter) {
+                                return DropdownMenuItem<String>(
+                                  value: filter,
+                                  child: Text(filter),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedStockFilter = val ?? 'All';
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Sort toggle
+                        FilterChip(
+                          selected: _sortByRecentlyAdded,
+                          label: const Text('Recently Added', style: TextStyle(fontSize: 11)),
+                          selectedColor: AppTheme.primaryColor.withOpacity(0.2),
+                          checkmarkColor: AppTheme.primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(color: _sortByRecentlyAdded ? AppTheme.primaryColor : Colors.grey[200]!),
+                          ),
+                          onSelected: (val) {
+                            setState(() {
+                              _sortByRecentlyAdded = val;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               );
             }),
@@ -147,11 +275,37 @@ class _ProductListPageState extends State<ProductListPage> {
                       child: Text('No products found. Add some!'));
                 }
 
-                final filteredProducts = state.products
+                var filteredProducts = state.products
                     .where((product) =>
                         product.name.toLowerCase().contains(_searchQuery) ||
-                        product.barcode.toLowerCase().contains(_searchQuery))
+                        product.barcode.toLowerCase().contains(_searchQuery) ||
+                        product.category.toLowerCase().contains(_searchQuery))
                     .toList();
+
+                // Apply Category filter
+                if (_selectedCategory != 'All') {
+                  filteredProducts = filteredProducts.where((p) => p.category == _selectedCategory).toList();
+                }
+
+                // Apply Stock filter
+                if (_selectedStockFilter != 'All') {
+                  filteredProducts = filteredProducts.where((product) {
+                    final int minStock = HiveDatabase.settingsBox.get('min_stock_${product.id}', defaultValue: 5);
+                    if (_selectedStockFilter == 'Out of Stock') {
+                      return product.stock <= 0;
+                    } else if (_selectedStockFilter == 'Low Stock') {
+                      return product.stock > 0 && product.stock <= minStock;
+                    } else if (_selectedStockFilter == 'In Stock') {
+                      return product.stock > minStock;
+                    }
+                    return true;
+                  }).toList();
+                }
+
+                // Sort by recently added (reverses order since list index is insertion order)
+                if (_sortByRecentlyAdded) {
+                  filteredProducts = filteredProducts.reversed.toList();
+                }
 
                 if (filteredProducts.isEmpty) {
                   return const Center(
@@ -192,12 +346,17 @@ class _ProductListPageState extends State<ProductListPage> {
                                       fontWeight: FontWeight.w600,
                                       fontSize: 16),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '₹${product.price.toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey[600]),
+                                Row(
+                                  children: [
+                                    Text(
+                                      '₹${product.price.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.grey[600]),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    _buildStockBadge(product),
+                                  ],
                                 ),
                               ],
                             ),

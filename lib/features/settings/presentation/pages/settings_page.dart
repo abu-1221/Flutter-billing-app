@@ -121,6 +121,27 @@ class _SettingsPageState extends State<SettingsPage> {
                   subtitle: 'View past invoices and receipts',
                   onTap: () => context.push('/history'),
                 ),
+                _buildDivider(),
+                _buildListItem(
+                  icon: Icons.bar_chart,
+                  title: 'Business Analytics',
+                  subtitle: 'Real-time sales dashboard & reports',
+                  onTap: () => context.push('/analytics'),
+                ),
+                _buildDivider(),
+                _buildListItem(
+                  icon: Icons.backup_outlined,
+                  title: 'Backup & Recovery',
+                  subtitle: 'Export & restore database locally',
+                  onTap: () => context.push('/backup'),
+                ),
+                _buildDivider(),
+                _buildListItem(
+                  icon: Icons.percent,
+                  title: 'Tax Configuration',
+                  subtitle: 'Manage active tax rates',
+                  onTap: () => context.push('/tax_settings'),
+                ),
               ],
             ),
 
@@ -203,6 +224,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                         ],
                       ),
+                    ),
+                    _buildDivider(),
+                    _buildListItem(
+                      icon: Icons.design_services_outlined,
+                      title: 'Receipt & Logo Customization',
+                      subtitle: 'Edit print formats and branding',
+                      onTap: () => context.push('/receipt_settings'),
                     ),
                   ],
                 );

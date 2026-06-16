@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import '../../../../core/data/hive_database.dart';
 import '../../../shop/presentation/bloc/shop_bloc.dart';
 import '../bloc/billing_bloc.dart';
 
@@ -305,29 +306,55 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'TAX (18% GST)',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey[500],
+                                // Dynamic active taxes display
+                                ...(() {
+                                  final List? stored = HiveDatabase.settingsBox.get('taxes_config') as List?;
+                                  final subtotal = billingState.subtotalAmount;
+                                  if (stored == null) {
+                                    // Fallback to default 18% GST
+                                    return [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('TAX (18% GST)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[500])),
+                                          Text('₹${(subtotal * 0.18).toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                        ],
+                                      )
+                                    ];
+                                  }
+                                  final widgets = <Widget>[];
+                                  for (var t in stored) {
+                                    if (t is Map && t['isActive'] == true) {
+                                      final name = t['name'] ?? 'Tax';
+                                      final pct = double.tryParse(t['percentage'].toString()) ?? 0.0;
+                                      final amount = subtotal * (pct / 100.0);
+                                      widgets.add(
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 6),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text('TAX ($name)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[500])),
+                                              Text('₹${amount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                  if (widgets.isEmpty) {
+                                    widgets.add(
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text('TAX (0%)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[500])),
+                                          const Text('₹0.00', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                        ],
                                       ),
-                                    ),
-                                    Text(
-                                      '₹${billingState.taxAmount.toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF0F172A),
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                    );
+                                  }
+                                  return widgets;
+                                })(),
                                 const Divider(height: 16),
                                 Row(
                                   mainAxisAlignment:

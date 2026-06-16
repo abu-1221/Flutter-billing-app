@@ -9,6 +9,7 @@ import '../bloc/product_bloc.dart';
 import '../../domain/entities/product.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/app_validators.dart';
+import '../../../../core/data/hive_database.dart';
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({super.key});
@@ -22,6 +23,10 @@ class _AddProductPageState extends State<AddProductPage> {
   String _name = '';
   String _barcode = '';
   double _price = 0.0;
+  double _purchasePrice = 0.0;
+  String _category = 'General';
+  int _stock = 50;
+  int _minStock = 5;
 
   void _scanBarcode() async {
     final result = await context.push<String>('/scanner');
@@ -35,6 +40,16 @@ class _AddProductPageState extends State<AddProductPage> {
   void _submit() {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
+
+      if (_purchasePrice > _price) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Purchase price cannot exceed selling price!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
       final productState = context.read<ProductBloc>().state;
       final existingProduct =
@@ -55,7 +70,13 @@ class _AddProductPageState extends State<AddProductPage> {
         name: _name,
         barcode: _barcode,
         price: _price,
+        stock: _stock,
+        category: _category,
+        purchasePrice: _purchasePrice,
       );
+
+      // Save threshold setting in settings box
+      HiveDatabase.settingsBox.put('min_stock_${product.id}', _minStock);
 
       context.read<ProductBloc>().add(AddProduct(product));
       context.pop();
@@ -129,7 +150,18 @@ class _AddProductPageState extends State<AddProductPage> {
                     onSaved: (value) => _name = value!,
                   ),
                   const SizedBox(height: 24),
-                  const InputLabel(text: 'Price'),
+                  const InputLabel(text: 'Category'),
+                  TextFormField(
+                    initialValue: 'General',
+                    decoration: const InputDecoration(
+                      hintText: 'e.g. Beverages, Groceries',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                    validator: AppValidators.required('Please enter a category'),
+                    onSaved: (value) => _category = value!,
+                  ),
+                  const SizedBox(height: 24),
+                  const InputLabel(text: 'Selling Price'),
                   TextFormField(
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
@@ -143,6 +175,64 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                     validator: AppValidators.price,
                     onSaved: (value) => _price = double.parse(value!),
+                  ),
+                  const SizedBox(height: 24),
+                  const InputLabel(text: 'Purchase Price'),
+                  TextFormField(
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      hintText: '0.00',
+                      prefixText: '₹ ',
+                      prefixStyle: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter a purchase price';
+                      }
+                      if (double.tryParse(value) == null || double.parse(value) < 0) {
+                        return 'Please enter a valid price';
+                      }
+                      return null;
+                    },
+                    onSaved: (value) => _purchasePrice = double.parse(value!),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const InputLabel(text: 'Current Stock'),
+                            TextFormField(
+                              keyboardType: TextInputType.number,
+                              initialValue: '50',
+                              validator: AppValidators.required('Required'),
+                              onSaved: (value) => _stock = int.parse(value!),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const InputLabel(text: 'Min Stock Warning'),
+                            TextFormField(
+                              keyboardType: TextInputType.number,
+                              initialValue: '5',
+                              validator: AppValidators.required('Required'),
+                              onSaved: (value) => _minStock = int.parse(value!),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -1,12 +1,15 @@
+import 'dart:io';
 import 'package:billing_app/core/widgets/input_label.dart';
 import 'package:billing_app/core/widgets/primary_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../domain/entities/shop.dart';
 import '../bloc/shop_bloc.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/app_validators.dart';
+import '../../../../core/data/hive_database.dart';
 
 class ShopDetailsPage extends StatefulWidget {
   const ShopDetailsPage({super.key});
@@ -23,6 +26,11 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
   late TextEditingController _phoneController;
   late TextEditingController _upiController;
   late TextEditingController _footerController;
+  
+  late TextEditingController _emailController;
+  late TextEditingController _gstinController;
+  late TextEditingController _regNoController;
+  String? _logoPath;
 
   @override
   void initState() {
@@ -33,6 +41,11 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
     _phoneController = TextEditingController();
     _upiController = TextEditingController();
     _footerController = TextEditingController();
+    
+    _emailController = TextEditingController(text: HiveDatabase.settingsBox.get('shop_email', defaultValue: 'siddique2k6@gmail.com'));
+    _gstinController = TextEditingController(text: HiveDatabase.settingsBox.get('shop_gstin', defaultValue: ''));
+    _regNoController = TextEditingController(text: HiveDatabase.settingsBox.get('shop_reg_no', defaultValue: ''));
+    _logoPath = HiveDatabase.settingsBox.get('shop_logo_path');
 
     // Load shop data
     context.read<ShopBloc>().add(LoadShopEvent());
@@ -49,6 +62,60 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
     }
   }
 
+  void _pickLogo(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: source);
+      if (image != null) {
+        setState(() {
+          _logoPath = image.path;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking logo: $e')));
+    }
+  }
+
+  void _showLogoPickerOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickLogo(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Take a Photo'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickLogo(ImageSource.camera);
+              },
+            ),
+            if (_logoPath != null)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Remove Logo', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _logoPath = null;
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -57,6 +124,9 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
     _phoneController.dispose();
     _upiController.dispose();
     _footerController.dispose();
+    _emailController.dispose();
+    _gstinController.dispose();
+    _regNoController.dispose();
     super.dispose();
   }
 
@@ -70,6 +140,15 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
         upiId: _upiController.text,
         footerText: _footerController.text,
       );
+
+      HiveDatabase.settingsBox.put('shop_email', _emailController.text.trim());
+      HiveDatabase.settingsBox.put('shop_gstin', _gstinController.text.trim());
+      HiveDatabase.settingsBox.put('shop_reg_no', _regNoController.text.trim());
+      if (_logoPath != null) {
+        HiveDatabase.settingsBox.put('shop_logo_path', _logoPath);
+      } else {
+        HiveDatabase.settingsBox.delete('shop_logo_path');
+      }
 
       context.read<ShopBloc>().add(UpdateShopEvent(shop));
     }
@@ -100,15 +179,61 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
           builder: (context, state) {
             if (state is ShopLoading) {
               return const Center(child: CircularProgressIndicator());
-            }
-
-            return SingleChildScrollView(
+            }            return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Store Logo Display & Edit
+                    Center(
+                      child: GestureDetector(
+                        onTap: _showLogoPickerOptions,
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 90,
+                              height: 90,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.grey[200]!),
+                                image: _logoPath != null && File(_logoPath!).existsSync()
+                                    ? DecorationImage(
+                                        image: FileImage(File(_logoPath!)),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: _logoPath == null || !File(_logoPath!).existsSync()
+                                  ? const Icon(Icons.store, size: 40, color: Colors.grey)
+                                  : null,
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.primaryColor,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        _logoPath != null ? 'Tap to change store logo' : 'Tap to upload store logo',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     Text('General Information',
                         style: TextStyle(
                           fontSize: 12,
@@ -124,38 +249,57 @@ class _ShopDetailsPageState extends State<ShopDetailsPage> {
                       style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                     ),
                     const SizedBox(height: 24),
-                    const InputLabel(text: 'Shop Name'),
+                    const InputLabel(text: 'Business Name'),
                     _buildTextField(
                       controller: _nameController,
-                      hint: 'e.g. QuickMart Superstore',
+                      hint: 'Enter Business Name',
                       validator: AppValidators.required('Required'),
                     ),
                     const SizedBox(height: 15),
                     const InputLabel(text: 'Address Line 1'),
                     _buildTextField(
                       controller: _address1Controller,
-                      hint: 'Samrajpet, Mecheri',
+                      hint: 'e.g. No. 26, Gandhi Street',
                       validator: AppValidators.required('Required'),
                     ),
                     const SizedBox(height: 15),
                     const InputLabel(text: 'Address Line 2 (Optional)'),
                     _buildTextField(
                       controller: _address2Controller,
-                      hint: 'Salem - 636453',
+                      hint: 'e.g. Subramaniyapuram',
                     ),
                     const SizedBox(height: 15),
                     const InputLabel(text: 'Phone Number'),
                     _buildTextField(
                       controller: _phoneController,
-                      hint: '+91 7010674588',
+                      hint: 'e.g. 8925483671',
                       keyboardType: TextInputType.phone,
                       validator: AppValidators.required('Required'),
+                    ),
+                    const SizedBox(height: 15),
+                    const InputLabel(text: 'Email Address'),
+                    _buildTextField(
+                      controller: _emailController,
+                      hint: 'business@example.com',
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 15),
+                    const InputLabel(text: 'GSTIN / Tax Identification'),
+                    _buildTextField(
+                      controller: _gstinController,
+                      hint: 'e.g. 22AAAAA0000A1Z5',
+                    ),
+                    const SizedBox(height: 15),
+                    const InputLabel(text: 'Business Registration Number'),
+                    _buildTextField(
+                      controller: _regNoController,
+                      hint: 'e.g. REG-109283-99',
                     ),
                     const SizedBox(height: 15),
                     const InputLabel(text: 'UPI ID'),
                     _buildTextField(
                       controller: _upiController,
-                      hint: 'dineshsowndar@oksbi',
+                      hint: 'example@okicici',
                     ),
                     const SizedBox(height: 15),
                     Row(

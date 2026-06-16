@@ -3,6 +3,8 @@ import 'package:equatable/equatable.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/usecases/product_usecases.dart';
 import '../../../../core/usecase/usecase.dart';
+import '../../data/models/product_model.dart';
+import '../../../../core/data/hive_database.dart';
 
 part 'product_event.dart';
 part 'product_state.dart';
@@ -23,6 +25,7 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
     on<AddProduct>(_onAddProduct);
     on<UpdateProduct>(_onUpdateProduct);
     on<DeleteProduct>(_onDeleteProduct);
+    on<BulkAddProducts>(_onBulkAddProducts);
   }
 
   Future<void> _onLoadProducts(
@@ -83,5 +86,24 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
         add(LoadProducts());
       },
     );
+  }
+
+  Future<void> _onBulkAddProducts(
+      BulkAddProducts event, Emitter<ProductState> emit) async {
+    emit(state.copyWith(status: ProductStatus.loading));
+    try {
+      final box = HiveDatabase.productBox;
+      for (var product in event.products) {
+        final model = ProductModel.fromEntity(product);
+        await box.put(model.id, model);
+      }
+      emit(state.copyWith(
+          status: ProductStatus.success,
+          message: '${event.products.length} products imported successfully'));
+      add(LoadProducts());
+    } catch (e) {
+      emit(state.copyWith(
+          status: ProductStatus.error, message: 'Bulk import failed: $e'));
+    }
   }
 }

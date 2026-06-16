@@ -20,7 +20,22 @@ class BillingState extends Equatable {
   });
 
   double get subtotalAmount => cartItems.fold(0, (sum, item) => sum + item.total);
-  double get taxAmount => subtotalAmount * 0.18; // 18% GST standard
+  
+  double get taxAmount {
+    final List? stored = HiveDatabase.settingsBox.get('taxes_config') as List?;
+    if (stored == null) {
+      return subtotalAmount * 0.18; // Fallback to 18% GST
+    }
+    double totalTax = 0.0;
+    for (var t in stored) {
+      if (t is Map && t['isActive'] == true) {
+        final pct = double.tryParse(t['percentage'].toString()) ?? 0.0;
+        totalTax += subtotalAmount * (pct / 100.0);
+      }
+    }
+    return totalTax;
+  }
+  
   double get totalAmount => subtotalAmount + taxAmount;
 
   BillingState copyWith({

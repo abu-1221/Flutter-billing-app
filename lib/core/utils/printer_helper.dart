@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import '../data/hive_database.dart';
 
 class EscPos {
   static const List<int> init = [0x1B, 0x40];
@@ -24,18 +27,20 @@ class PrinterHelper {
   bool get isConnected => _isConnected;
 
   Future<bool> checkPermission() async {
-    // Request Bluetooth and Location permissions
-    // Android 12+ needs BLUETOOTH_SCAN, BLUETOOTH_CONNECT
-    // Older Android needs BLUETOOTH, BLUETOOTH_ADMIN, ACCESS_FINE_LOCATION
+    if (Platform.isAndroid) {
+      await Permission.bluetooth.request();
+      final bluetoothScan = await Permission.bluetoothScan.request();
+      final bluetoothConnect = await Permission.bluetoothConnect.request();
+      final location = await Permission.location.request();
 
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.bluetooth,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.location,
-    ].request();
+      // On Android 12+ (API 31+), bluetoothScan & bluetoothConnect are required.
+      // On older versions, location permission is required for Bluetooth scanning.
+      final isNewBluetoothGranted = bluetoothScan.isGranted && bluetoothConnect.isGranted;
+      final isOldBluetoothGranted = location.isGranted;
 
-    return statuses.values.every((status) => status.isGranted);
+      return isNewBluetoothGranted || isOldBluetoothGranted;
+    }
+    return true;
   }
 
   Future<List<BluetoothInfo>> getBondedDevices() async {
@@ -118,6 +123,10 @@ class PrinterHelper {
   }) async {
     if (!_isConnected) return;
 
+    final int width = HiveDatabase.settingsBox.get('printer_width', defaultValue: 58);
+    final int lineLength = width == 80 ? 48 : 32;
+    final String divider = '-' * lineLength;
+
     // Construct ESC/POS bytes manually or using helper
     List<int> bytes = [];
 
@@ -160,14 +169,18 @@ class PrinterHelper {
       bytes += EscPos.lineFeed;
     }
 
-    bytes += _textToBytes('--------------------------------');
+    bytes += _textToBytes(divider);
     bytes += EscPos.lineFeed;
 
     // Header (Align Left)
     bytes += EscPos.alignLeft;
-    bytes += _textToBytes('Item            Price   Total');
+    if (lineLength == 48) {
+      bytes += _textToBytes('Item                    Price     Qty     Total');
+    } else {
+      bytes += _textToBytes('Item            Price   Total');
+    }
     bytes += EscPos.lineFeed;
-    bytes += _textToBytes('--------------------------------');
+    bytes += _textToBytes(divider);
     bytes += EscPos.lineFeed;
 
     // Items
@@ -177,15 +190,21 @@ class PrinterHelper {
       String price = item['price'].toString();
       String totalItem = item['total'].toString();
 
-      String prefix = '${qty}x $name';
-      if (prefix.length > 16) prefix = prefix.substring(0, 16);
+      if (lineLength == 48) {
+        if (name.length > 24) name = name.substring(0, 24);
+        final String line = name.padRight(24) + price.padRight(10) + qty.padRight(6) + totalItem;
+        bytes += _textToBytes(line);
+      } else {
+        String prefix = '${qty}x $name';
+        if (prefix.length > 16) prefix = prefix.substring(0, 16);
 
-      String line = prefix.padRight(16) + price.padRight(8) + totalItem;
-      bytes += _textToBytes(line);
+        String line = prefix.padRight(16) + price.padRight(8) + totalItem;
+        bytes += _textToBytes(line);
+      }
       bytes += EscPos.lineFeed;
     }
 
-    bytes += _textToBytes('--------------------------------');
+    bytes += _textToBytes(divider);
     bytes += EscPos.lineFeed;
 
     // Total (Align Right)
@@ -194,9 +213,24 @@ class PrinterHelper {
       bytes += _textToBytes('Subtotal: ₹${subtotal.toStringAsFixed(2)}');
       bytes += EscPos.lineFeed;
     }
-    if (tax != null) {
-      bytes += _textToBytes('Tax (18% GST): ₹${tax.toStringAsFixed(2)}');
-      bytes += EscPos.lineFeed;
+    // Print dynamic taxes
+    final List? storedTaxes = HiveDatabase.settingsBox.get('taxes_config') as List?;
+    if (storedTaxes == null) {
+      if (tax != null) {
+        bytes += _textToBytes('Tax (18% GST): ₹${tax.toStringAsFixed(2)}');
+        bytes += EscPos.lineFeed;
+      }
+    } else {
+      final double computedSubtotal = subtotal ?? (total - (tax ?? 0.0));
+      for (var t in storedTaxes) {
+        if (t is Map && t['isActive'] == true) {
+          final name = t['name'] ?? 'Tax';
+          final pct = double.tryParse(t['percentage'].toString()) ?? 0.0;
+          final amount = computedSubtotal * (pct / 100.0);
+          bytes += _textToBytes('Tax ($name): ₹${amount.toStringAsFixed(2)}');
+          bytes += EscPos.lineFeed;
+        }
+      }
     }
     bytes += EscPos.boldOn;
     bytes += _textToBytes('TOTAL: ₹${total.toStringAsFixed(2)}');

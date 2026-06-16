@@ -9,6 +9,11 @@ import '../../features/billing/presentation/pages/scanner_page.dart';
 import '../../features/billing/presentation/pages/checkout_page.dart';
 import '../../features/billing/presentation/pages/history_page.dart';
 import '../../features/billing/presentation/pages/history_detail_page.dart';
+import '../../features/billing/presentation/pages/analytics_page.dart';
+import '../../features/settings/presentation/pages/receipt_settings_page.dart';
+import '../../features/settings/presentation/pages/backup_page.dart';
+import '../../features/settings/presentation/pages/tax_configuration_page.dart';
+import '../../features/product/presentation/pages/import_products_page.dart';
 import '../../features/product/domain/entities/product.dart';
 
 final router = GoRouter(
@@ -33,6 +38,18 @@ final router = GoRouter(
       builder: (context, state) => const SettingsPage(),
     ),
     GoRoute(
+      path: '/receipt_settings',
+      builder: (context, state) => const ReceiptSettingsPage(),
+    ),
+    GoRoute(
+      path: '/backup',
+      builder: (context, state) => const BackupPage(),
+    ),
+    GoRoute(
+      path: '/tax_settings',
+      builder: (context, state) => const TaxConfigurationPage(),
+    ),
+    GoRoute(
       path: '/history',
       builder: (context, state) => const HistoryPage(),
       routes: [
@@ -49,12 +66,20 @@ final router = GoRouter(
       ],
     ),
     GoRoute(
+      path: '/analytics',
+      builder: (context, state) => const AnalyticsPage(),
+    ),
+    GoRoute(
       path: '/products',
       builder: (context, state) => const ProductListPage(),
       routes: [
         GoRoute(
           path: 'add',
           builder: (context, state) => const AddProductPage(),
+        ),
+        GoRoute(
+          path: 'import',
+          builder: (context, state) => const ImportProductsPage(),
         ),
         GoRoute(
           path: 'edit/:id',

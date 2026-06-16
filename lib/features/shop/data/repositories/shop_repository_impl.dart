@@ -16,13 +16,12 @@ class ShopRepositoryImpl implements ShopRepository {
       if (shop != null) {
         return Right(shop);
       } else {
-        // Return default shop if not found
         return const Right(Shop(
-            name: 'Abou',
-            addressLine1: 'No. 26, Gandhi Street',
-            addressLine2: 'Subramaniyapuram',
+            name: 'Abu',
+            addressLine1: 'Number 26, Indira Gandhi Street',
+            addressLine2: 'Subramaniyapuram, Trichy - 620020',
             phoneNumber: '8925483671',
-            upiId: 'siddique2k6@oksbi',
+            upiId: 'siddique2k6@okicici',
             footerText: 'Thank you, Visit again!!!'));
       }
     } catch (e) {

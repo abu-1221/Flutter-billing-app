@@ -17,9 +17,15 @@ class HiveDatabase {
 
     // Open Boxes
     await Hive.openBox<ProductModel>(productBoxName);
-    await Hive.openBox<ShopModel>(shopBoxName);
+    final shopBox = await Hive.openBox<ShopModel>(shopBoxName);
     await Hive.openBox(settingsBoxName); // Generic box for simple key-value
     await Hive.openBox(transactionsBoxName); // Store history
+
+    // Clear legacy placeholder defaults to let new ones load
+    final shop = shopBox.get('shop_details');
+    if (shop != null && (shop.name == 'Abou' || shop.upiId.endsWith('@oksbi') || shop.name == 'Dinesh Shop')) {
+      await shopBox.delete('shop_details');
+    }
   }
 
   static Box<ProductModel> get productBox =>

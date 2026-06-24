@@ -42,7 +42,17 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
 
   Future<void> _onAddProduct(
       AddProduct event, Emitter<ProductState> emit) async {
-    emit(state.copyWith(status: ProductStatus.loading)); // Keep products
+    emit(state.copyWith(status: ProductStatus.loading));
+    final box = HiveDatabase.productBox;
+    final exists = box.values.any((p) => p.barcode == event.product.barcode);
+    if (exists) {
+      final matchedProduct = box.values.firstWhere((p) => p.barcode == event.product.barcode);
+      emit(state.copyWith(
+        status: ProductStatus.error,
+        message: 'This barcode already belongs to product:\n${matchedProduct.name}\n(Category: ${matchedProduct.category})',
+      ));
+      return;
+    }
     final result = await addProductUseCase(event.product);
     result.fold(
       (failure) => emit(state.copyWith(
@@ -59,6 +69,16 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
   Future<void> _onUpdateProduct(
       UpdateProduct event, Emitter<ProductState> emit) async {
     emit(state.copyWith(status: ProductStatus.loading));
+    final box = HiveDatabase.productBox;
+    final exists = box.values.any((p) => p.barcode == event.product.barcode && p.id != event.product.id);
+    if (exists) {
+      final matchedProduct = box.values.firstWhere((p) => p.barcode == event.product.barcode && p.id != event.product.id);
+      emit(state.copyWith(
+        status: ProductStatus.error,
+        message: 'This barcode already belongs to product:\n${matchedProduct.name}\n(Category: ${matchedProduct.category})',
+      ));
+      return;
+    }
     final result = await updateProductUseCase(event.product);
     result.fold(
       (failure) => emit(state.copyWith(
@@ -93,13 +113,17 @@ class ProductBloc extends Bloc<ProductEvent, ProductState> {
     emit(state.copyWith(status: ProductStatus.loading));
     try {
       final box = HiveDatabase.productBox;
+      int importedCount = 0;
       for (var product in event.products) {
+        final exists = box.values.any((p) => p.barcode == product.barcode);
+        if (exists) continue; // UNIQUE(barcode) database constraint: protect against duplicate insertion
         final model = ProductModel.fromEntity(product);
         await box.put(model.id, model);
+        importedCount++;
       }
       emit(state.copyWith(
           status: ProductStatus.success,
-          message: '${event.products.length} products imported successfully'));
+          message: '$importedCount products imported successfully'));
       add(LoadProducts());
     } catch (e) {
       emit(state.copyWith(

@@ -58,7 +58,7 @@ class _AddProductPageState extends State<AddProductPage> {
       if (existingProduct != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Product with barcode "$_barcode" already exists!'),
+            content: Text('This barcode already belongs to product:\n${existingProduct.name}\n(Category: ${existingProduct.category})'),
             backgroundColor: Colors.red,
           ),
         );

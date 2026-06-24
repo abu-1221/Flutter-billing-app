@@ -43,6 +43,7 @@ class PrintReceiptEvent extends BillingEvent {
   final String address2;
   final String phone;
   final String footer;
+  final String? invoiceNumber;
 
   const PrintReceiptEvent({
     required this.shopName,
@@ -50,10 +51,11 @@ class PrintReceiptEvent extends BillingEvent {
     required this.address2,
     required this.phone,
     required this.footer,
+    this.invoiceNumber,
   });
 
   @override
-  List<Object> get props => [shopName, address1, address2, phone, footer];
+  List<Object> get props => [shopName, address1, address2, phone, footer, invoiceNumber ?? ''];
 }
 
 class ConfirmPurchaseEvent extends BillingEvent {

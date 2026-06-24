@@ -8,15 +8,40 @@ class AppTheme {
   static const Color surfaceColor = Colors.white;
   static const Color errorColor = Color(0xFFB00020);
 
- static final TextTheme textTheme = GoogleFonts.ibmPlexSansTextTheme().copyWith(
-  bodyLarge: GoogleFonts.ibmPlexSans(
-    fontSize: 15,
-    fontWeight: FontWeight.w500,
-    color: Colors.black,
-  ),
- 
-);
+  /// Initialize Google Fonts to prevent network-related hangs on first launch.
+  /// Must be called before runApp().
+  static void init() {
+    // This tells GoogleFonts to NOT try to fetch fonts from the internet.
+    // It will only use bundled or cached fonts.
+    // This is the #1 cause of splash screen hangs on Android.
+    GoogleFonts.config.allowRuntimeFetching = false;
+  }
+
+  static TextTheme get textTheme {
+    // Use default system font as fallback since we disabled runtime fetching.
+    // If the font is cached, GoogleFonts will use it; otherwise system font.
+    try {
+      return GoogleFonts.ibmPlexSansTextTheme().copyWith(
+        bodyLarge: GoogleFonts.ibmPlexSans(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Colors.black,
+        ),
+      );
+    } catch (_) {
+      // Fallback to default system text theme if GoogleFonts fails
+      return const TextTheme(
+        bodyLarge: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Colors.black,
+        ),
+      );
+    }
+  }
+
   static ThemeData get lightTheme {
+    final tt = textTheme;
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -32,20 +57,16 @@ class AppTheme {
         surface: surfaceColor,
         error: errorColor,
       ),
-      textTheme: textTheme.apply(
+      textTheme: tt.apply(
         bodyColor: Colors.black87,
         displayColor: Colors.black,
       ),
-      
       appBarTheme: AppBarTheme(
-       backgroundColor: Colors.transparent,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: textTheme.titleLarge?.copyWith(
-          color: Colors.black,
-          fontWeight: FontWeight.bold,
-          fontSize: 18
-        ),
+        titleTextStyle: tt.titleLarge?.copyWith(
+            color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       cardTheme: CardTheme(
@@ -53,13 +74,14 @@ class AppTheme {
         shadowColor: Colors.black.withOpacity(0.1),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: surfaceColor,
-      ) ,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-         hintStyle:
-            TextStyle(color: Colors.grey[400], fontWeight: FontWeight.normal,fontSize: 13),
-      
+        hintStyle: TextStyle(
+            color: Colors.grey[400],
+            fontWeight: FontWeight.normal,
+            fontSize: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey[300]!),
@@ -78,7 +100,6 @@ class AppTheme {
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -90,7 +111,7 @@ class AppTheme {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           textStyle:
-              textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+              tt.labelLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
       ),
     );

@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
-import 'package:excel/excel.dart' hide Border;
 import 'package:uuid/uuid.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -23,31 +22,38 @@ class ImportProductsPage extends StatefulWidget {
   State<ImportProductsPage> createState() => _ImportProductsPageState();
 }
 
-class _ImportProductsPageState extends State<ImportProductsPage> with SingleTickerProviderStateMixin {
+class _ImportProductsPageState extends State<ImportProductsPage> {
   bool _isLoading = false;
   String? _fileName;
+  String? _filePath;
   List<Product> _validProducts = [];
-  List<Map<String, dynamic>> _invalidRecords = []; // Row number, product info, error message, suggested fix, invalid value
+  List<Map<String, dynamic>> _invalidRecords = [];
   bool _hasParsed = false;
-  late TabController _tabController;
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+  final Map<String, List<String>> variations = {
+    'Product Name': ['name', 'product_name', 'product', 'item_name'],
+    'Barcode': ['barcode', 'bar_code', 'barcode_number', 'code'],
+    'Price': ['price', 'selling_price', 'sale_price'],
+    'Purchase Price': ['purchase_price', 'cost', 'cost_price'],
+    'Stock': ['stock', 'quantity', 'qty'],
+    'Category': ['category', 'product_category'],
+    'Minimum Stock': ['minimum_stock', 'min_stock', 'minimum_quantity'],
+  };
+
+  int _getMappedIndex(List<String> normalizedHeaders, String fieldName) {
+    final aliases = variations[fieldName]!;
+    for (var alias in aliases) {
+      final idx = normalizedHeaders.indexOf(alias);
+      if (idx >= 0) return idx;
+    }
+    return -1;
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  void _pickAndParseFile() async {
+  void _pickFile() async {
     try {
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['csv', 'xlsx'],
+        allowedExtensions: ['csv'],
       );
 
       if (result == null || result.files.isEmpty) return;
@@ -57,45 +63,61 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
       if (path == null) return;
 
       setState(() {
-        _isLoading = true;
         _fileName = file.name;
+        _filePath = path;
         _validProducts = [];
         _invalidRecords = [];
         _hasParsed = false;
       });
 
-      final File systemFile = File(path);
-      final String extension = file.extension?.toLowerCase() ?? '';
-
-      List<List<dynamic>> rows = [];
-
-      if (extension == 'csv') {
-        final input = systemFile.openRead();
-        final fields = await input
-            .transform(utf8.decoder)
-            .transform(const CsvToListConverter())
-            .toList();
-        rows = fields;
-      } else if (extension == 'xlsx') {
-        final bytes = systemFile.readAsBytesSync();
-        final excel = Excel.decodeBytes(bytes);
-        for (var table in excel.tables.keys) {
-          final sheet = excel.tables[table];
-          if (sheet != null) {
-            for (var row in sheet.rows) {
-              final listRow = row.map((cell) => cell?.value).toList();
-              rows.add(listRow);
-            }
-          }
-          break; // Parse first sheet only
-        }
-      }
-
-      _validateAndPreview(rows);
+      // Automatically validate immediately
+      _validateImport();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error reading file: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Error selecting file: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _validateImport() async {
+    final path = _filePath;
+    if (path == null) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final File systemFile = File(path);
+      String csvString;
+      try {
+        csvString = await systemFile.readAsString(encoding: utf8);
+      } catch (_) {
+        csvString = await systemFile.readAsString(encoding: latin1);
+      }
+
+      if (csvString.startsWith('\uFEFF')) {
+        csvString = csvString.substring(1);
+      }
+
+      String separator = ',';
+      if (csvString.contains(';') && !csvString.contains(',')) {
+        separator = ';';
+      }
+
+      final fields = CsvToListConverter(
+        fieldDelimiter: separator,
+        shouldParseNumbers: false,
+      ).convert(csvString);
+
+      if (fields.isEmpty) {
+        throw Exception('The selected file is empty!');
+      }
+
+      _validateAndPreview(fields);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error parsing file: $e'), backgroundColor: Colors.red),
       );
     } finally {
       setState(() => _isLoading = false);
@@ -103,148 +125,85 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
   }
 
   void _validateAndPreview(List<List<dynamic>> rows) {
-    if (rows.isEmpty) {
+    final cleanRows = rows.where((row) => row.isNotEmpty && row.any((cell) => cell != null && cell.toString().trim().isNotEmpty)).toList();
+    if (cleanRows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('The selected file is empty!'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('CSV structure does not match the template.'), backgroundColor: Colors.red),
       );
       return;
     }
 
-    int nameIdx = 0;
-    int barcodeIdx = 1;
-    int priceIdx = 2;
-    int purPriceIdx = 3;
-    int stockIdx = 4;
-    int catIdx = 5;
-    int minStockIdx = -1;
+    final firstRow = cleanRows.first.map((e) {
+      if (e == null) return '';
+      String s = e.toString().toLowerCase().trim();
+      s = s.replaceAll('\uFEFF', '');
+      s = s.replaceAll('_', ' ');
+      s = s.replaceAll('\r', '');
+      s = s.replaceAll('\n', '');
+      return s.trim();
+    }).toList();
 
-    final firstRow = rows.first.map((e) => e?.toString().toLowerCase().replaceAll('_', ' ').trim() ?? '').toList();
-    bool hasHeader = firstRow.contains('name') || firstRow.contains('product name') || firstRow.contains('barcode');
-    int startRow = 0;
-
-    if (hasHeader) {
-      startRow = 1;
-      nameIdx = firstRow.indexOf('name') >= 0 
-          ? firstRow.indexOf('name') 
-          : (firstRow.indexOf('product name') >= 0 ? firstRow.indexOf('product name') : 0);
-      barcodeIdx = firstRow.indexOf('barcode') >= 0 ? firstRow.indexOf('barcode') : 1;
-      priceIdx = firstRow.indexOf('price') >= 0 
-          ? firstRow.indexOf('price') 
-          : (firstRow.indexOf('selling price') >= 0 ? firstRow.indexOf('selling price') : 2);
-      purPriceIdx = firstRow.indexOf('purchase price') >= 0 ? firstRow.indexOf('purchase price') : 3;
-      stockIdx = firstRow.indexOf('stock') >= 0 
-          ? firstRow.indexOf('stock') 
-          : (firstRow.indexOf('current stock') >= 0 ? firstRow.indexOf('current stock') : 4);
-      catIdx = firstRow.indexOf('category') >= 0 ? firstRow.indexOf('category') : 5;
-      minStockIdx = firstRow.indexOf('minimum stock') >= 0 ? firstRow.indexOf('minimum stock') : firstRow.indexOf('min stock');
-    }
+    int nameIdx = _getMappedIndex(firstRow, 'Product Name');
+    int barcodeIdx = _getMappedIndex(firstRow, 'Barcode');
+    int priceIdx = _getMappedIndex(firstRow, 'Price');
+    int purPriceIdx = _getMappedIndex(firstRow, 'Purchase Price');
+    int stockIdx = _getMappedIndex(firstRow, 'Stock');
+    int catIdx = _getMappedIndex(firstRow, 'Category');
+    int minStockIdx = _getMappedIndex(firstRow, 'Minimum Stock');
 
     final Set<String> fileBarcodes = {};
     final dbProducts = context.read<ProductBloc>().state.products;
 
-    for (int i = startRow; i < rows.length; i++) {
-      final row = rows[i];
-      if (row.isEmpty || row.every((element) => element == null || element.toString().trim().isEmpty)) continue;
+    for (int i = 1; i < cleanRows.length; i++) {
+      final row = cleanRows[i];
       final int rowNum = i + 1;
 
-      final String name = _getVal(row, nameIdx, '').trim();
-      final String barcode = _getVal(row, barcodeIdx, '').trim();
-      final String priceStr = _getVal(row, priceIdx, '').trim();
-      final String purPriceStr = _getVal(row, purPriceIdx, '').trim();
-      final String stockStr = _getVal(row, stockIdx, '').trim();
-      final String category = _getVal(row, catIdx, '').trim();
-      final String minStockStr = minStockIdx >= 0 ? _getVal(row, minStockIdx, '5').trim() : '5';
+      final String name = nameIdx >= 0 ? _getVal(row, nameIdx, '').trim() : '';
+      final String barcode = barcodeIdx >= 0 ? _getVal(row, barcodeIdx, '').trim() : '';
+      final String priceStr = priceIdx >= 0 ? _getVal(row, priceIdx, '').trim() : '';
+      final String purPriceStr = purPriceIdx >= 0 ? _getVal(row, purPriceIdx, '').trim() : '';
+      final String stockStr = stockIdx >= 0 ? _getVal(row, stockIdx, '').trim() : '';
+      final String category = catIdx >= 0 ? _getVal(row, catIdx, '').trim() : '';
+      final String minStockStr = minStockIdx >= 0 ? _getVal(row, minStockIdx, '').trim() : '';
 
-      // Validation Checks row by row
-      if (name.isEmpty) {
+      final List<String> missingFields = [];
+      if (name.isEmpty) missingFields.add('Product Name');
+      if (barcode.isEmpty) missingFields.add('Barcode');
+      if (priceStr.isEmpty) missingFields.add('Price');
+      if (purPriceStr.isEmpty) missingFields.add('Purchase Price');
+      if (stockStr.isEmpty) missingFields.add('Stock');
+      if (category.isEmpty) missingFields.add('Category');
+      if (minStockStr.isEmpty) missingFields.add('Minimum Stock');
+
+      Map<String, dynamic> recordBase = {
+        'row': rowNum,
+        'name': name.isEmpty ? 'N/A' : name,
+        'barcode': barcode.isEmpty ? 'N/A' : barcode,
+        'category': category.isEmpty ? 'N/A' : category,
+        'price': priceStr.isEmpty ? '—' : priceStr,
+        'purchasePrice': purPriceStr.isEmpty ? '—' : purPriceStr,
+        'stock': stockStr.isEmpty ? '—' : stockStr,
+        'minStock': minStockStr.isEmpty ? '—' : minStockStr,
+        'missingFields': missingFields,
+      };
+
+      if (missingFields.isNotEmpty) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': 'N/A',
-          'barcode': barcode.isEmpty ? 'N/A' : barcode,
-          'field': 'Product Name',
-          'value': '',
-          'error': 'Product Name cannot be empty',
-          'fix': 'Enter a valid product name description'
+          ...recordBase,
+          'error': 'Missing ${missingFields.join(', ')}',
+          'warning': '${missingFields.join(', ')} is missing.',
+          'fix': 'Ensure all required fields are filled.'
         });
         continue;
       }
 
-      if (barcode.isEmpty) {
-        _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': 'N/A',
-          'field': 'Barcode',
-          'value': '',
-          'error': 'Barcode required',
-          'fix': 'Enter a unique scanner barcode number'
-        });
-        continue;
-      }
-
-      if (category.isEmpty) {
-        _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Category',
-          'value': '',
-          'error': 'Category required',
-          'fix': 'Enter a categorisation group like Grocery or Electronics'
-        });
-        continue;
-      }
-
-      if (priceStr.isEmpty) {
-        _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Selling Price',
-          'value': '',
-          'error': 'Selling Price required',
-          'fix': 'Specify the sales price of this product'
-        });
-        continue;
-      }
-
-      if (purPriceStr.isEmpty) {
-        _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Purchase Price',
-          'value': '',
-          'error': 'Purchase Price required',
-          'fix': 'Specify the cost price paid to acquire this item'
-        });
-        continue;
-      }
-
-      if (stockStr.isEmpty) {
-        _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Stock',
-          'value': '',
-          'error': 'Stock required',
-          'fix': 'Enter an integer representing starting stock'
-        });
-        continue;
-      }
-
-      // Numeric validations
       final double? price = double.tryParse(priceStr);
       if (price == null || price < 0) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Selling Price',
-          'value': priceStr,
-          'error': 'Selling price must be a positive numeric value',
-          'fix': 'Enter a valid decimal number for price'
+          ...recordBase,
+          'error': 'Invalid Price',
+          'warning': 'Price must be a positive numeric value.',
+          'fix': 'Enter a valid decimal number'
         });
         continue;
       }
@@ -252,26 +211,20 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
       final double? purPrice = double.tryParse(purPriceStr);
       if (purPrice == null || purPrice < 0) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Purchase Price',
-          'value': purPriceStr,
-          'error': 'Purchase price must be a positive numeric value',
-          'fix': 'Enter a valid decimal number for purchase price'
+          ...recordBase,
+          'error': 'Invalid Purchase Price',
+          'warning': 'Purchase Price must be a positive numeric value.',
+          'fix': 'Enter a valid decimal number'
         });
         continue;
       }
 
       if (purPrice > price) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Purchase Price',
-          'value': purPriceStr,
-          'error': 'Purchase price cannot exceed selling price',
-          'fix': 'Set purchase price lower than selling price ($price)'
+          ...recordBase,
+          'error': 'Cost exceeds Price',
+          'warning': 'Cost ($purPrice) exceeds Selling Price ($price).',
+          'fix': 'Ensure Cost is lower than Selling Price'
         });
         continue;
       }
@@ -279,13 +232,10 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
       final int? stock = int.tryParse(stockStr);
       if (stock == null || stock < 0) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Stock',
-          'value': stockStr,
-          'error': 'Stock must be an integer count',
-          'fix': 'Enter a positive non-decimal whole number'
+          ...recordBase,
+          'error': 'Invalid Stock',
+          'warning': 'Stock must be a positive integer.',
+          'fix': 'Enter a whole number'
         });
         continue;
       }
@@ -293,45 +243,34 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
       final int? minStock = int.tryParse(minStockStr);
       if (minStock == null || minStock < 0) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Minimum Stock',
-          'value': minStockStr,
-          'error': 'Minimum stock must be an integer',
-          'fix': 'Specify a default low-stock threshold like 5'
+          ...recordBase,
+          'error': 'Invalid Minimum Stock',
+          'warning': 'Minimum Stock must be a positive integer.',
+          'fix': 'Enter a whole number'
         });
         continue;
       }
 
-      // Barcode duplication validations
       if (fileBarcodes.contains(barcode)) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Barcode',
-          'value': barcode,
-          'error': 'Duplicate barcode in import file',
-          'fix': 'Ensure barcode is unique across the spreadsheet'
+          ...recordBase,
+          'error': 'Duplicate barcode inside CSV.',
+          'warning': 'Duplicate barcode inside CSV.',
+          'fix': 'Ensure barcode is unique across CSV'
         });
         continue;
       }
 
       if (dbProducts.any((p) => p.barcode == barcode)) {
         _invalidRecords.add({
-          'row': rowNum,
-          'name': name,
-          'barcode': barcode,
-          'field': 'Barcode',
-          'value': barcode,
-          'error': 'Barcode already exists in database',
-          'fix': 'Use a unique barcode that is not already in your product list'
+          ...recordBase,
+          'error': 'Barcode already exists:\n$barcode',
+          'warning': 'Barcode already exists:\n$barcode',
+          'fix': 'Use a unique barcode'
         });
         continue;
       }
 
-      // Passed all validations
       fileBarcodes.add(barcode);
       _validProducts.add(Product(
         id: const Uuid().v4(),
@@ -343,13 +282,11 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
         category: category,
       ));
 
-      // Temporarily store the parsed min stock for insertion on save
       HiveDatabase.settingsBox.put('temp_min_stock_$barcode', minStock);
     }
 
     setState(() {
       _hasParsed = true;
-      _tabController.index = _validProducts.isNotEmpty ? 0 : 1;
     });
   }
 
@@ -372,15 +309,33 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
         HiveDatabase.settingsBox.delete('temp_min_stock_${product.barcode}');
       }
 
+      // Store Import History
+      final total = _validProducts.length + _invalidRecords.length;
+      final historyEntry = {
+        'id': const Uuid().v4(),
+        'admin_id': 'admin',
+        'file_name': _fileName ?? 'Unknown file',
+        'total_products': total,
+        'valid_products': _validProducts.length,
+        'invalid_products': _invalidRecords.length,
+        'imported_products': _validProducts.length,
+        'failed_products': _invalidRecords.length,
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      await HiveDatabase.importHistoryBox.add(historyEntry);
+
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Successfully imported ${_validProducts.length} items!'),
+          content: Text('${_validProducts.length} Products Imported Successfully.\n${_invalidRecords.length} Products Failed Validation.'),
           backgroundColor: Colors.green,
         ),
       );
 
       context.pop();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Import failed: $e'), backgroundColor: Colors.red),
       );
@@ -389,34 +344,23 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
     }
   }
 
-  void _downloadSampleFile(String extension) async {
+  void _downloadSampleFile() async {
     try {
       final List<List<dynamic>> sampleData = [
-        ['name', 'barcode', 'price', 'purchase price', 'stock', 'category', 'minimum stock'],
-        ['Oreo Biscuits 120g', '8901234567890', '30.00', '25.00', '100', 'Groceries', '10'],
-        ['USB C Cable 1.5m', '6909876543210', '199.00', '90.00', '50', 'Electronics', '5'],
-        ['Sprite Lemon Can 300ml', '8901234567899', '40.00', '32.00', '120', 'Beverages', '15']
+        ['name', 'barcode', 'price', 'purchase_price', 'stock', 'category', 'minimum_stock'],
+        ['Rice 5Kg', '8901000000001', '320', '280', '50', 'Grocery', '5'],
+        ['Oil 1L', '8901000000002', '180', '160', '30', 'Grocery', '5'],
+        ['USB Cable', '8901000000003', '250', '180', '20', 'Electronics', '3'],
+        ['Sprite 750ml', '8901000000004', '45', '30', '100', 'Beverages', '10']
       ];
 
       final directory = await getTemporaryDirectory();
-      final String filePath = '${directory.path}/sample_inventory.$extension';
+      final String filePath = '${directory.path}/sample_inventory.csv';
       final File file = File(filePath);
 
-      if (extension == 'csv') {
-        const converter = ListToCsvConverter();
-        final String csvContent = converter.convert(sampleData);
-        await file.writeAsString(csvContent);
-      } else {
-        final excel = Excel.createExcel();
-        final sheet = excel['Sheet1'];
-        for (var row in sampleData) {
-          sheet.appendRow(row.map((cell) => TextCellValue(cell.toString())).toList());
-        }
-        final bytes = excel.encode();
-        if (bytes != null) {
-          await file.writeAsBytes(bytes);
-        }
-      }
+      const converter = ListToCsvConverter();
+      final String csvContent = converter.convert(sampleData);
+      await file.writeAsString(csvContent);
 
       await Share.shareXFiles([XFile(filePath)], text: 'Download Sample Inventory Spreadsheet');
     } catch (e) {
@@ -432,14 +376,12 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
 
     try {
       final List<List<dynamic>> reportData = [
-        ['Row Number', 'Field Name', 'Invalid Value', 'Error Description', 'Suggested Fix'],
+        ['Row Number', 'Error Description', 'Suggested Fix'],
       ];
 
       for (var record in _invalidRecords) {
         reportData.add([
           record['row'],
-          record['field'],
-          record['value'],
           record['error'],
           record['fix']
         ]);
@@ -470,281 +412,282 @@ class _ImportProductsPageState extends State<ImportProductsPage> with SingleTick
         centerTitle: true,
         leading: IconButton(
           icon: Icon(Icons.chevron_left, size: 28, color: Theme.of(context).primaryColor),
-          onPressed: () => context.pop(),
+          onPressed: () {
+            if (_hasParsed) {
+              setState(() {
+                _hasParsed = false;
+                _validProducts = [];
+                _invalidRecords = [];
+              });
+            } else {
+              context.pop();
+            }
+          },
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Container(
-                  width: double.infinity,
-                  color: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryColor.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.file_present, color: AppTheme.primaryColor, size: 24),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text('Upload Inventory Template', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Upload a CSV or Excel (.xlsx) file. Columns must contain: Name, Barcode, Price, Purchase Price, Stock, and Category.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          TextButton.icon(
-                            onPressed: () => _downloadSampleFile('csv'),
-                            icon: const Icon(Icons.download, size: 16),
-                            label: const Text('Sample CSV', style: TextStyle(fontSize: 12)),
-                          ),
-                          const SizedBox(width: 16),
-                          TextButton.icon(
-                            onPressed: () => _downloadSampleFile('xlsx'),
-                            icon: const Icon(Icons.download, size: 16),
-                            label: const Text('Sample Excel', style: TextStyle(fontSize: 12)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      PrimaryButton(
-                        onPressed: _pickAndParseFile,
-                        icon: Icons.upload_file,
-                        label: _fileName ?? 'Select XLSX / CSV File',
-                      ),
-                    ],
-                  ),
-                ),
-
-                if (_hasParsed) ...[
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Card(
-                            elevation: 0,
-                            color: Colors.green[50],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(color: Colors.green[100]!),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Column(
-                                children: [
-                                  Text('${_validProducts.length}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green[700])),
-                                  const SizedBox(height: 2),
-                                  const Text('Valid Products', style: TextStyle(fontSize: 11, color: Colors.green)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Card(
-                            elevation: 0,
-                            color: _invalidRecords.isEmpty ? Colors.grey[50] : Colors.red[50],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(color: _invalidRecords.isEmpty ? Colors.grey[200]! : Colors.red[100]!),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Column(
-                                children: [
-                                  Text('${_invalidRecords.length}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _invalidRecords.isEmpty ? Colors.grey : Colors.red[700])),
-                                  const SizedBox(height: 2),
-                                  const Text('Invalid Records', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  TabBar(
-                    controller: _tabController,
-                    labelColor: AppTheme.primaryColor,
-                    unselectedLabelColor: Colors.grey,
-                    indicatorColor: AppTheme.primaryColor,
-                    tabs: [
-                      Tab(text: 'Ready to Import (${_validProducts.length})'),
-                      Tab(text: 'Failed / Warnings (${_invalidRecords.length})'),
-                    ],
-                  ),
-
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildValidTable(),
-                        _buildInvalidReport(),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-      bottomNavigationBar: _hasParsed && _validProducts.isNotEmpty
-          ? SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => context.pop(),
-                        child: const Text('Cancel', style: TextStyle(color: Colors.red)),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: PrimaryButton(
-                        onPressed: _confirmImport,
-                        icon: Icons.check_circle,
-                        label: 'Confirm Import (${_validProducts.length} Items)',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : const SizedBox.shrink(),
+          : _hasParsed
+              ? _buildFullPagePreview()
+              : _buildUploadSection(),
     );
   }
 
-  Widget _buildValidTable() {
-    if (_validProducts.isEmpty) {
-      return const Center(child: Text('No valid products to preview', style: TextStyle(color: Colors.grey)));
-    }
-
-    return Scrollbar(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columns: const [
-              DataColumn(label: Text('Product Name')),
-              DataColumn(label: Text('Barcode')),
-              DataColumn(label: Text('Category')),
-              DataColumn(label: Text('Selling Price')),
-              DataColumn(label: Text('Purchase Price')),
-              DataColumn(label: Text('Stock')),
-            ],
-            rows: _validProducts.map((product) {
-              return DataRow(
-                cells: [
-                  DataCell(Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600))),
-                  DataCell(Text(product.barcode)),
-                  DataCell(Text(product.category)),
-                  DataCell(Text('₹${product.price.toStringAsFixed(2)}')),
-                  DataCell(Text('₹${product.purchasePrice.toStringAsFixed(2)}')),
-                  DataCell(Text('${product.stock}')),
-                ],
-              );
-            }).toList(),
+  Widget _buildUploadSection() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.file_present, color: AppTheme.primaryColor, size: 28),
+                ),
+                const SizedBox(height: 12),
+                const Text('Upload Inventory Template', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text(
+                  'Upload a CSV file. Columns must contain: Name, Barcode, Price, Purchase Price, Stock, Category, and Minimum Stock.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: _downloadSampleFile,
+                  icon: const Icon(Icons.download, size: 16),
+                  label: const Text('Download Sample CSV Template', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 16),
+                PrimaryButton(
+                  onPressed: _pickFile,
+                  icon: Icons.upload_file,
+                  label: _fileName ?? 'Select CSV File',
+                ),
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFullPagePreview() {
+    final totalProducts = _validProducts.length + _invalidRecords.length;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Summary Cards (Validation Summary Dashboard)
+          Row(
+            children: [
+              Expanded(child: _buildSummaryCard('Total Products', '$totalProducts', Colors.blue)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSummaryCard('Valid Products', '${_validProducts.length}', Colors.green)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSummaryCard('Invalid Products', '${_invalidRecords.length}', Colors.red)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: _buildSummaryCard('Ready To Import', '${_validProducts.length}', Colors.teal)),
+              const SizedBox(width: 8),
+              Expanded(child: _buildSummaryCard('Failed Products', '${_invalidRecords.length}', Colors.orange)),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // 2. Ready To Import Table
+          const Text('Ready To Import Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
+          const SizedBox(height: 8),
+          _buildReadyTable(),
+          const SizedBox(height: 20),
+
+          // 3. Invalid Products Table
+          const Text('Invalid Products Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
+          const SizedBox(height: 8),
+          _buildInvalidTable(),
+          const SizedBox(height: 20),
+
+          // 4. Warning Section
+          if (_invalidRecords.isNotEmpty) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Warning Section', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.orange)),
+                TextButton.icon(
+                  onPressed: _exportErrorReport,
+                  icon: const Icon(Icons.share, size: 16),
+                  label: const Text('Export Error CSV', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _buildWarningsSection(),
+            const SizedBox(height: 20),
+          ],
+
+          // 5. Import Products Button
+          SizedBox(
+            width: double.infinity,
+            child: PrimaryButton(
+              onPressed: _validProducts.isNotEmpty ? _confirmImport : null,
+              icon: Icons.check_circle,
+              label: 'Import Products',
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(String title, String value, Color color) {
+    return Card(
+      elevation: 0,
+      color: color.withOpacity(0.05),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: color.withOpacity(0.15)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          children: [
+            Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+            const SizedBox(height: 4),
+            Text(title, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w500), textAlign: TextAlign.center),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildInvalidReport() {
-    if (_invalidRecords.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline, size: 48, color: Colors.green[300]),
-            const SizedBox(height: 8),
-            const Text('All checks passed successfully.', style: TextStyle(color: Colors.grey)),
-          ],
+  Widget _buildReadyTable() {
+    if (_validProducts.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: const Text(
+          'No valid products to import',
+          style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic, fontSize: 13),
+          textAlign: TextAlign.center,
         ),
       );
     }
 
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(Colors.teal[50]),
+          columns: const [
+            DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Barcode', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Price', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Stock', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Category', style: TextStyle(fontWeight: FontWeight.bold))),
+          ],
+          rows: _validProducts.map<DataRow>((product) {
+            return DataRow(cells: [
+              DataCell(Text(product.name)),
+              DataCell(Text(product.barcode)),
+              DataCell(Text('₹${product.price.toStringAsFixed(2)}')),
+              DataCell(Text('${product.stock}')),
+              DataCell(Text(product.category)),
+            ]);
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInvalidTable() {
+    if (_invalidRecords.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: const Text(
+          'No failed products',
+          style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic, fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(Colors.red[50]),
+          columns: const [
+            DataColumn(label: Text('Row', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Product', style: TextStyle(fontWeight: FontWeight.bold))),
+            DataColumn(label: Text('Error', style: TextStyle(fontWeight: FontWeight.bold))),
+          ],
+          rows: _invalidRecords.map<DataRow>((record) {
+            return DataRow(cells: [
+              DataCell(Text('${record['row']}')),
+              DataCell(Text(record['name'] == 'N/A' ? 'Unknown' : record['name'])),
+              DataCell(Text(record['error']?.toString() ?? 'Validation failed', style: const TextStyle(color: Colors.red))),
+            ]);
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarningsSection() {
     return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: _exportErrorReport,
-              icon: const Icon(Icons.share, size: 16),
-              label: const Text('Export Error CSV', style: TextStyle(fontSize: 12)),
-            ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _invalidRecords.map((record) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Text(
+            'Row ${record['row']}:\n${record['warning'] ?? record['error']}\n',
+            style: const TextStyle(fontSize: 13, color: Colors.orange, fontWeight: FontWeight.bold),
           ),
-        ),
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _invalidRecords.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final record = _invalidRecords[index];
-              return Card(
-                elevation: 0,
-                color: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Colors.red[50]!),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: Colors.red[50],
-                        radius: 18,
-                        child: Text('R${record['row']}', style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              record['name'] == 'N/A' ? 'Missing Product Name' : record['name'],
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                            ),
-                            const SizedBox(height: 4),
-                            Text('Field: ${record['field']}', style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
-                            if (record['value'].toString().isNotEmpty) ...[
-                              Text('Invalid Value: "${record['value']}"', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                            ],
-                            const SizedBox(height: 4),
-                            Text(record['error'], style: TextStyle(fontSize: 12, color: Colors.red[700], fontWeight: FontWeight.w500)),
-                            const SizedBox(height: 2),
-                            Text('Fix: ${record['fix']}', style: TextStyle(fontSize: 11, color: Colors.green[700], fontStyle: FontStyle.italic)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+        );
+      }).toList(),
     );
   }
 }

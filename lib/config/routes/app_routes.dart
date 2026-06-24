@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import '../../features/billing/presentation/pages/role_selection_page.dart';
 import '../../features/billing/presentation/pages/home_page.dart';
 import '../../features/product/presentation/pages/product_list_page.dart';
 import '../../features/product/presentation/pages/add_product_page.dart';
@@ -32,6 +33,10 @@ final router = GoRouter(
           builder: (context, state) => const CheckoutPage(),
         ),
       ],
+    ),
+    GoRoute(
+      path: '/admin',
+      builder: (context, state) => const RoleSelectionPage(),
     ),
     GoRoute(
       path: '/settings',

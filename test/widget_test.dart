@@ -1,30 +1,32 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:billing_app/core/utils/app_validators.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:billing_app/main.dart';
-
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('AppValidators.required', () {
+    final validator = AppValidators.required('Required');
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('rejects empty and whitespace-only values', () {
+      expect(validator(null), 'Required');
+      expect(validator('   '), 'Required');
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('accepts non-empty values', () {
+      expect(validator('Product'), isNull);
+    });
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  group('AppValidators.price', () {
+    test('accepts zero and positive finite values', () {
+      expect(AppValidators.price('0'), isNull);
+      expect(AppValidators.price('12.50'), isNull);
+    });
+
+    test('rejects empty, non-numeric, negative, and non-finite values', () {
+      expect(AppValidators.price(''), 'Please enter a price');
+      expect(AppValidators.price('twelve'), 'Please enter a valid number');
+      expect(AppValidators.price('-1'), 'Price cannot be negative');
+      expect(AppValidators.price('NaN'), 'Please enter a valid number');
+      expect(AppValidators.price('Infinity'), 'Please enter a valid number');
+    });
   });
 }

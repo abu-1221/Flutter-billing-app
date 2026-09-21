@@ -75,8 +75,8 @@ lib/
 
 1. Clone the repository and navigate to the project directory:
    ```bash
-   git clone <repository_url>
-   cd billing_app
+   git clone https://github.com/abu-1221/Flutter-billing-app.git
+   cd Flutter-billing-app
    ```
 
 2. Fetch dependencies:

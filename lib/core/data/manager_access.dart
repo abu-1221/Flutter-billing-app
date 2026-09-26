@@ -1,3 +1,9 @@
+import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:hive/hive.dart';
+
 /// Local, per-install manager access. Not an online identity or a defense against
 /// someone who controls the device and can replace the app or read its data.
 class ManagerAccess extends ChangeNotifier {

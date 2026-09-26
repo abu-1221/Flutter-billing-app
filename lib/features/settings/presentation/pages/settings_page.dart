@@ -8,7 +8,7 @@ import '../../../shop/presentation/bloc/shop_bloc.dart';
 import '../bloc/printer_bloc.dart';
 import '../bloc/printer_event.dart';
 import '../bloc/printer_state.dart';
-import '../../../../core/data/hive_database.dart';
+import '../../../../config/routes/app_routes.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -72,8 +72,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: AppTheme.primaryColor
-                                    .withOpacity(0.2),
+                                color: AppTheme.primaryColor.withOpacity(0.2),
                                 blurRadius: 15,
                                 spreadRadius: 5,
                               )
@@ -259,7 +258,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: 'Switch to Customer Mode',
                   subtitle: 'Hide administrative configurations',
                   onTap: () {
-                    HiveDatabase.settingsBox.put('admin_mode_active', false);
+                    managerAccess.lock();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Switched to Customer Mode'),

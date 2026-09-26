@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/data/hive_database.dart';
+import '../../../../config/routes/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/data/manager_access.dart';
 
 class RoleSelectionPage extends StatefulWidget {
   const RoleSelectionPage({super.key});
@@ -13,85 +14,110 @@ class RoleSelectionPage extends StatefulWidget {
 class _RoleSelectionPageState extends State<RoleSelectionPage> {
   final _passcodeController = TextEditingController();
   bool _obscureText = true;
+  bool _busy = false;
+  final _confirmationController = TextEditingController();
 
   @override
   void dispose() {
     _passcodeController.dispose();
+    _confirmationController.dispose();
     super.dispose();
   }
 
   void _showPasscodeDialog() {
     _passcodeController.clear();
+    _confirmationController.clear();
+    final setup = !managerAccess.isConfigured;
     showDialog(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.lock, color: AppTheme.primaryColor),
-                  SizedBox(width: 8),
-                  Text('Admin Authorization', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Please enter the manager passcode to access admin privileges.',
-                    style: TextStyle(fontSize: 13, color: Colors.black54),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, updateDialog) => AlertDialog(
+          title: Text(setup ? 'Set Manager Passcode' : 'Manager Access'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(setup
+                  ? 'Store owner: set a unique passcode (10 or more characters) before giving this device to staff. Keep it safe: there is no recovery without app-data reset.'
+                  : 'Enter your manager passcode.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passcodeController,
+                obscureText: _obscureText,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: 'Passcode',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        _obscureText ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () =>
+                        updateDialog(() => _obscureText = !_obscureText),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passcodeController,
-                    obscureText: _obscureText,
-                    keyboardType: TextInputType.text,
-                    decoration: InputDecoration(
-                      hintText: 'Enter passcode',
-                      prefixIcon: const Icon(Icons.password, color: Colors.grey),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscureText ? Icons.visibility : Icons.visibility_off, color: Colors.grey),
-                        onPressed: () {
-                          setState(() {
-                            _obscureText = !_obscureText;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    if (_passcodeController.text == 'admin') {
-                      Navigator.pop(context);
-                      HiveDatabase.settingsBox.put('admin_mode_active', true);
-                      context.go('/settings'); // Go to Admin Settings/Dashboard directly
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Incorrect Passcode'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  ),
-                  child: const Text('Confirm'),
+              ),
+              if (setup)
+                TextField(
+                  controller: _confirmationController,
+                  obscureText: _obscureText,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration:
+                      const InputDecoration(labelText: 'Confirm passcode'),
                 ),
-              ],
-            );
-          },
-        );
-      },
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: _busy ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      final passcode = _passcodeController.text;
+                      if (setup &&
+                          (!ManagerAccess.validPasscode(passcode) ||
+                              passcode != _confirmationController.text)) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text(
+                                'Use 10-128 characters and enter the same passcode twice.')));
+                        return;
+                      }
+                      updateDialog(() => _busy = true);
+                      try {
+                        if (setup) {
+                          await managerAccess.configure(passcode);
+                        } else if (!await managerAccess.unlock(passcode)) {
+                          if (mounted) {
+                            final wait = managerAccess.retrySeconds;
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(wait > 0
+                                    ? 'Too many attempts. Try again in $wait seconds.'
+                                    : 'Incorrect passcode.')));
+                          }
+                          return;
+                        }
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        if (mounted) context.go('/settings');
+                      } catch (_) {
+                        if (mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              content: Text(
+                                  'Could not save manager access. Try again.')));
+                      } finally {
+                        _passcodeController.clear();
+                        _confirmationController.clear();
+                        _busy = false;
+                        if (dialogContext.mounted) {
+                          updateDialog(() {});
+                        }
+                      }
+                    },
+              child: Text(setup ? 'Set passcode' : 'Unlock'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -152,7 +178,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                   elevation: 2,
                   child: InkWell(
                     onTap: () {
-                      HiveDatabase.settingsBox.put('admin_mode_active', false);
+                      managerAccess.lock();
                       context.go('/');
                     },
                     borderRadius: BorderRadius.circular(16),
@@ -166,7 +192,8 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                               color: Colors.teal.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(Icons.qr_code_scanner_outlined, color: Colors.teal, size: 32),
+                            child: const Icon(Icons.qr_code_scanner_outlined,
+                                color: Colors.teal, size: 32),
                           ),
                           const SizedBox(width: 16),
                           const Expanded(
@@ -175,17 +202,21 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                               children: [
                                 Text(
                                   'Customer Terminal',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16),
                                 ),
                                 SizedBox(height: 4),
                                 Text(
                                   'Scan products & complete order payment',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey),
                                 ),
                               ],
                             ),
                           ),
-                          const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
+                          const Icon(Icons.arrow_forward_ios,
+                              color: Colors.grey, size: 16),
                         ],
                       ),
                     ),
@@ -208,7 +239,10 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                               color: AppTheme.primaryColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(Icons.admin_panel_settings_outlined, color: AppTheme.primaryColor, size: 32),
+                            child: const Icon(
+                                Icons.admin_panel_settings_outlined,
+                                color: AppTheme.primaryColor,
+                                size: 32),
                           ),
                           const SizedBox(width: 16),
                           const Expanded(
@@ -217,17 +251,21 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                               children: [
                                 Text(
                                   'Admin & Store Manager',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16),
                                 ),
                                 SizedBox(height: 4),
                                 Text(
                                   'Inventory, Analytics, configuration & settings',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey),
                                 ),
                               ],
                             ),
                           ),
-                          const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
+                          const Icon(Icons.arrow_forward_ios,
+                              color: Colors.grey, size: 16),
                         ],
                       ),
                     ),

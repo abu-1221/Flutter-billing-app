@@ -1,4 +1,7 @@
 import 'package:go_router/go_router.dart';
+import 'package:hive/hive.dart';
+import '../../core/data/manager_access.dart';
+
 import '../../features/billing/presentation/pages/role_selection_page.dart';
 import '../../features/billing/presentation/pages/home_page.dart';
 import '../../features/product/presentation/pages/product_list_page.dart';
@@ -17,8 +20,28 @@ import '../../features/settings/presentation/pages/tax_configuration_page.dart';
 import '../../features/product/presentation/pages/import_products_page.dart';
 import '../../features/product/domain/entities/product.dart';
 
+final managerAccess = ManagerAccess(Hive.box(ManagerAccess.boxName));
+
 final router = GoRouter(
   initialLocation: '/',
+  refreshListenable: managerAccess,
+  redirect: (context, state) {
+    const protected = [
+      '/settings',
+      '/receipt_settings',
+      '/backup',
+      '/tax_settings',
+      '/analytics',
+      '/products',
+      '/shop'
+    ];
+    final path = state.uri.path;
+    if (!managerAccess.isUnlocked &&
+        protected.any((route) => path == route || path.startsWith('$route/'))) {
+      return '/admin';
+    }
+    return null;
+  },
   routes: [
     GoRoute(
       path: '/',

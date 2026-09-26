@@ -57,25 +57,31 @@ class _BackupPageState extends State<BackupPage> {
     setState(() => _isLoading = true);
     try {
       // 1. Gather all Hive box data
-      final products = HiveDatabase.productBox.values.map((p) => {
-        'id': p.id,
-        'name': p.name,
-        'barcode': p.barcode,
-        'price': p.price,
-        'stock': p.stock,
-      }).toList();
+      final products = HiveDatabase.productBox.values
+          .map((p) => {
+                'id': p.id,
+                'name': p.name,
+                'barcode': p.barcode,
+                'price': p.price,
+                'stock': p.stock,
+              })
+          .toList();
 
-      final shop = HiveDatabase.shopBox.values.map((s) => {
-        'name': s.name,
-        'addressLine1': s.addressLine1,
-        'addressLine2': s.addressLine2,
-        'phoneNumber': s.phoneNumber,
-        'upiId': s.upiId,
-        'footerText': s.footerText,
-      }).toList();
+      final shop = HiveDatabase.shopBox.values
+          .map((s) => {
+                'name': s.name,
+                'addressLine1': s.addressLine1,
+                'addressLine2': s.addressLine2,
+                'phoneNumber': s.phoneNumber,
+                'upiId': s.upiId,
+                'footerText': s.footerText,
+              })
+          .toList();
 
       final settings = <String, dynamic>{};
       for (var key in HiveDatabase.settingsBox.keys) {
+        // Older builds stored an authorization flag here. Never export it.
+        if (key == 'admin_mode_active') continue;
         settings[key.toString()] = HiveDatabase.settingsBox.get(key);
       }
 
@@ -102,7 +108,8 @@ class _BackupPageState extends State<BackupPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Backup created successfully'), backgroundColor: Colors.green));
+          content: Text('Backup created successfully'),
+          backgroundColor: Colors.green));
       _loadLocalBackups();
     } catch (e) {
       if (!mounted) return;
@@ -194,6 +201,7 @@ class _BackupPageState extends State<BackupPage> {
       // 4. Restore Settings
       final Map settingsMap = data['settings'] as Map? ?? {};
       for (var entry in settingsMap.entries) {
+        if (entry.key == 'admin_mode_active') continue;
         await HiveDatabase.settingsBox.put(entry.key, entry.value);
       }
 
@@ -205,11 +213,13 @@ class _BackupPageState extends State<BackupPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Database restored successfully!'), backgroundColor: Colors.green));
+          content: Text('Database restored successfully!'),
+          backgroundColor: Colors.green));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Restore failed: Invalid or corrupt backup file'), backgroundColor: Colors.red));
+          content: const Text('Restore failed: Invalid or corrupt backup file'),
+          backgroundColor: Colors.red));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -256,12 +266,14 @@ class _BackupPageState extends State<BackupPage> {
                           color: AppTheme.primaryColor.withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.cloud_upload_outlined, color: AppTheme.primaryColor, size: 32),
+                        child: const Icon(Icons.cloud_upload_outlined,
+                            color: AppTheme.primaryColor, size: 32),
                       ),
                       const SizedBox(height: 16),
                       const Text(
                         'Secure Database Backup',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -282,12 +294,17 @@ class _BackupPageState extends State<BackupPage> {
 
                 // History Header
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Saved Backups (${_backups.length})'.toUpperCase(),
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2),
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                          letterSpacing: 1.2),
                     ),
                   ),
                 ),
@@ -299,13 +316,16 @@ class _BackupPageState extends State<BackupPage> {
                       : ListView.separated(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           itemCount: _backups.length,
-                          separatorBuilder: (context, index) => const SizedBox(height: 12),
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final file = _backups[index] as File;
-                            final name = file.path.split('/').last.split('\\').last;
+                            final name =
+                                file.path.split('/').last.split('\\').last;
                             final stat = file.statSync();
                             final size = (stat.size / 1024).toStringAsFixed(1);
-                            final date = DateFormat('yyyy-MM-dd HH:mm').format(stat.modified);
+                            final date = DateFormat('yyyy-MM-dd HH:mm')
+                                .format(stat.modified);
 
                             return Card(
                               elevation: 0,
@@ -315,22 +335,34 @@ class _BackupPageState extends State<BackupPage> {
                               ),
                               color: Colors.white,
                               child: ListTile(
-                                leading: const Icon(Icons.folder_zip_outlined, color: Colors.amber, size: 36),
-                                title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                subtitle: Text('$date • $size KB', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                leading: const Icon(Icons.folder_zip_outlined,
+                                    color: Colors.amber, size: 36),
+                                title: Text(name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13)),
+                                subtitle: Text('$date • $size KB',
+                                    style: const TextStyle(
+                                        fontSize: 11, color: Colors.grey)),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.share, color: AppTheme.primaryColor, size: 20),
+                                      icon: const Icon(Icons.share,
+                                          color: AppTheme.primaryColor,
+                                          size: 20),
                                       onPressed: () => _shareBackup(file),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.settings_backup_restore, color: Colors.teal, size: 20),
+                                      icon: const Icon(
+                                          Icons.settings_backup_restore,
+                                          color: Colors.teal,
+                                          size: 20),
                                       onPressed: () => _restoreBackup(file),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                      icon: const Icon(Icons.delete_outline,
+                                          color: Colors.redAccent, size: 20),
                                       onPressed: () => _deleteBackup(file),
                                     ),
                                   ],
@@ -350,9 +382,12 @@ class _BackupPageState extends State<BackupPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.drive_file_move_outlined, size: 48, color: Colors.grey[300]),
+          Icon(Icons.drive_file_move_outlined,
+              size: 48, color: Colors.grey[300]),
           const SizedBox(height: 12),
-          const Text('No backups saved locally', style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
+          const Text('No backups saved locally',
+              style:
+                  TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
         ],
       ),
     );

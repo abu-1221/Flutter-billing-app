@@ -64,6 +64,10 @@ lib/
 - **Inventory Sideloading**: A manager opens the Product feature to add new stock to the local database, taking a picture of the barcode to bind the SKU for future lightning-fast checkouts.
 - **No-Connection Operation**: The business operates a stall at an exhibition with poor networking. The app functions entirely via its embedded Hive local database and Bluetooth, completely undisturbed by network drops.
 
+## Manager access
+
+On first use, the store owner opens the manager screen and sets a unique passcode of at least 10 characters. There is **no default passcode**. The manager passcode is salted and PBKDF2-HMAC-SHA256 hashed locally in a separate Hive box, not exported with billing backups. Manager screens require unlocking in the current app session; switching to customer mode locks them again, and repeated wrong attempts cause a five-minute cooldown. The owner must retain the passcode: there is no server or recovery account. This is a local access guard, not protection against a person with full control of the device or an exported APK/data directory. Give staff access only after owner setup. Existing billing records are not reset.
+
 ## 🚀 Getting Started
 
 ### Prerequisites

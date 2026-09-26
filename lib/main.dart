@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:hive/hive.dart';
 import 'config/routes/app_routes.dart';
 import 'core/data/hive_database.dart';
 import 'core/service_locator.dart' as di;
@@ -26,24 +25,15 @@ void main() {
       debugPrint("FlutterError: ${details.exceptionAsString()}");
     };
 
-    // Robust Hive initialization with fallback
-    bool hiveReady = false;
+    // Never erase billing data to recover from an initialization error.
     try {
       await HiveDatabase.init();
-      hiveReady = true;
     } catch (e) {
-      debugPrint("Hive init failed: $e");
-      try {
-        await Hive.deleteFromDisk();
-        await HiveDatabase.init();
-        hiveReady = true;
-      } catch (e2) {
-        debugPrint("Hive fallback also failed: $e2");
-      }
-    }
-
-    if (!hiveReady) {
-      runApp(const _ErrorApp(message: 'Database failed to initialize.\nPlease uninstall and reinstall the app.'));
+      debugPrint('Hive init failed: $e');
+      runApp(const _ErrorApp(
+        message: 'Database could not open. Your data has not been deleted. '
+            'Close and reopen the app; if this continues, contact support before reinstalling.',
+      ));
       return;
     }
 

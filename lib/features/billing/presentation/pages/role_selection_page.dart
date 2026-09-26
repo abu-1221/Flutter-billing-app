@@ -97,13 +97,16 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                           }
                           return;
                         }
-                        if (dialogContext.mounted) Navigator.pop(dialogContext);
-                        if (mounted) context.go('/settings');
+                        if (mounted && dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                          context.go('/settings');
+                        }
                       } catch (_) {
-                        if (mounted)
+                        if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                               content: Text(
                                   'Could not save manager access. Try again.')));
+                        }
                       } finally {
                         _passcodeController.clear();
                         _confirmationController.clear();
